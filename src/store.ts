@@ -1,4 +1,4 @@
-import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, StudyGoal, StudySession } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StudyGoal, StudySession } from './types';
 
 const DATABASE_NAME = 'silverstone-local';
 const DATABASE_VERSION = 1;
@@ -59,33 +59,35 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 4,
+    version: 5,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
     studySessions: [],
     portfolioProjects: [],
     careerOpportunities: [],
+    socialPosts: [],
   };
 }
 
 function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown };
+  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown };
   if (!Array.isArray(candidate.tasks) || !candidate.tasks.every(isAgentTask)
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 4,
+      version: 5,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
       studySessions: [],
       portfolioProjects: [],
       careerOpportunities: [],
+      socialPosts: [],
     };
   }
-  if (![2, 3, 4].includes(candidate.version as number) || !Array.isArray(candidate.studySessions)) return null;
+  if (![2, 3, 4, 5].includes(candidate.version as number) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -98,8 +100,10 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!validGoal || !candidate.studySessions.every(isStudySession)) return null;
   const projects = candidate.version === 2 ? [] : candidate.portfolioProjects;
   if (!Array.isArray(projects) || !projects.every(isPortfolioProject)) return null;
-  const careerOpportunities = candidate.version === 4 ? candidate.careerOpportunities : [];
+  const careerOpportunities = candidate.version === 2 || candidate.version === 3 ? [] : candidate.careerOpportunities;
   if (!Array.isArray(careerOpportunities) || !careerOpportunities.every(isCareerOpportunity)) return null;
+  const socialPosts = candidate.version === 5 ? candidate.socialPosts : [];
+  if (!Array.isArray(socialPosts) || !socialPosts.every(isSocialPostDraft)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
     ? {
@@ -110,13 +114,14 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 4,
+    version: 5,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
     studySessions: candidate.studySessions,
     portfolioProjects: projects,
     careerOpportunities,
+    socialPosts,
   };
 }
 
@@ -187,6 +192,26 @@ function isDateOnly(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isSocialPostDraft(value: unknown): value is SocialPostDraft {
+  if (!value || typeof value !== 'object') return false;
+  const post = value as Partial<SocialPostDraft>;
+  const channels: SocialChannel[] = ['Facebook', 'Instagram', 'X'];
+  const validPlannedFor = typeof post.plannedFor === 'string' && (post.plannedFor === '' || (() => {
+    const date = new Date(post.plannedFor as string);
+    return !Number.isNaN(date.getTime()) && date.toISOString() === post.plannedFor;
+  })());
+  const validTimeZone = typeof post.timezone === 'string' && post.timezone.length <= 100 && (() => {
+    try { new Intl.DateTimeFormat(undefined, { timeZone: post.timezone }); return true; } catch { return false; }
+  })();
+  return typeof post.id === 'string' && typeof post.title === 'string' && post.title.trim().length > 0 && post.title.length <= 120
+    && typeof post.body === 'string' && post.body.trim().length > 0 && post.body.length <= 5000
+    && Array.isArray(post.channels) && post.channels.length > 0 && post.channels.length <= channels.length
+    && post.channels.every((channel) => channels.includes(channel)) && new Set(post.channels).size === post.channels.length
+    && validPlannedFor && validTimeZone
+    && typeof post.createdAt === 'string' && Number.isFinite(Date.parse(post.createdAt))
+    && typeof post.updatedAt === 'string' && Number.isFinite(Date.parse(post.updatedAt));
 }
 
 export function createWorkspaceBackup(state: LocalAppState): string {

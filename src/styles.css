@@ -362,6 +362,10 @@ h1, h2, h3, p { margin-top: 0; }
 .draft-copy { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 0; }
 .draft-copy small { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .draft-copy strong { overflow: hidden; color: var(--ink); font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.draft-copy > span { display: -webkit-box; max-width: 540px; overflow: hidden; color: var(--muted); font-size: 8px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.draft-row-button { width: 100%; padding: 9px 0; color: inherit; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.draft-row-button:hover { background: var(--surface-soft); }
+.draft-status .draft-status-planned { background: #67b79d; }
 .draft-status { display: inline-flex; align-items: center; gap: 5px; color: #969eac; font-size: 8px; }
 .draft-status i { width: 5px; height: 5px; background: #a9b1bf; border-radius: 50%; }
 .library-banner { min-height: 200px; background: radial-gradient(circle at 84% 34%,rgba(121,141,219,.25),transparent 33%),linear-gradient(115deg,#142033,#25334d); }
@@ -746,6 +750,26 @@ h1, h2, h3, p { margin-top: 0; }
 .career-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .career-editor-actions { display: inline-flex; gap: 7px; }
 .career-editor-actions .button { min-height: 34px; }
+.social-scrim { z-index: 66; }
+.social-dialog { width: min(100%, 660px); max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; }
+.social-dialog input:not([type="checkbox"]) { display: block; width: 100%; min-height: 38px; padding: 9px 11px; color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 8px; font-size: 10px; }
+.social-dialog textarea { line-height: 1.55; }
+.social-dialog input:focus-visible, .social-dialog textarea:focus-visible { outline: 2px solid color-mix(in srgb, #7278d9 65%, transparent); outline-offset: 1px; }
+.social-channel-fieldset { min-width: 0; margin: 11px 0 0; padding: 0; border: 0; }
+.social-channel-fieldset legend { padding: 0; }
+.social-channel-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.social-channel-option { position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 10px; color: var(--muted-strong); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 7px; font-size: 9px; cursor: pointer; }
+.social-channel-option.is-selected { color: var(--ink-strong); background: var(--purple-soft); border-color: color-mix(in srgb, #7278d9 36%, var(--line)); }
+.social-channel-option input { width: 13px; height: 13px; margin: 0; accent-color: #686ed7; }
+.social-channel-option > span { display: grid; place-items: center; width: 17px; height: 17px; color: #686ed7; font-family: Manrope, sans-serif; font-size: 12px; font-weight: 700; }
+.social-content-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.social-content-heading .field-label { margin-bottom: 6px; }
+.social-post-preview { padding: 14px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 10px; }
+.social-preview-channels { display: block; margin-bottom: 9px; color: #686ed7; font-family: 'DM Mono', monospace; font-size: 8px; letter-spacing: .3px; }
+.social-post-preview > strong { color: var(--ink-strong); font-family: Manrope, sans-serif; font-size: 12px; }
+.social-post-preview > p { margin: 8px 0 0; color: var(--muted-strong); font-size: 9px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.social-editor-actions { display: inline-flex; gap: 7px; }
+.social-editor-actions .button { min-height: 34px; }
 @media (max-width: 650px) {
   .voice-scrim { align-items: end; padding: 0; }
   .voice-dialog { width: 100%; max-height: 92dvh; border-radius: 18px 18px 0 0; }
@@ -769,4 +793,7 @@ h1, h2, h3, p { margin-top: 0; }
   .career-form-grid { grid-template-columns: minmax(0,1fr); gap: 0; }
   .career-editor-actions { width: 100%; }
   .career-editor-actions .button { flex: 1; }
+  .social-dialog { max-height: 92dvh; padding: 18px; }
+  .social-editor-actions { width: 100%; }
+  .social-editor-actions .button { flex: 1; }
 }

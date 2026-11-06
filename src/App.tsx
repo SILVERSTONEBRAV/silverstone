@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
-import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PageKey, PortfolioProject, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 
 type ModalMode = 'task' | 'capture' | null;
 type Theme = 'light' | 'dark';
 const opportunityStages: OpportunityStage[] = ['Saved', 'Researching', 'Drafting', 'Ready to submit', 'Submitted', 'Interview', 'Offer', 'Closed'];
+const socialChannels: SocialChannel[] = ['Facebook', 'Instagram', 'X'];
 
 const navigation: { label: string; items: { key: PageKey; label: string; icon: IconName }[] }[] = [
   {
@@ -73,6 +74,7 @@ function App() {
   const [studyGoalOpen, setStudyGoalOpen] = useState(false);
   const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
   const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
+  const [socialEditor, setSocialEditor] = useState<SocialPostDraft | null | undefined>(undefined);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -143,6 +145,7 @@ function App() {
         setStudyGoalOpen(false);
         setPortfolioEditor(undefined);
         setCareerEditor(undefined);
+        setSocialEditor(undefined);
         setFocusOpen(false);
         setMobileMenuOpen(false);
       }
@@ -225,6 +228,22 @@ function App() {
     setToast('Opportunity saved locally');
   }
 
+  function saveSocialPost(draft: { id?: string; title: string; body: string; channels: SocialChannel[]; plannedFor: string; timezone: string }) {
+    const updatedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.socialPosts.find((post) => post.id === draft.id);
+      const post: SocialPostDraft = existing
+        ? { ...existing, ...draft, id: existing.id, updatedAt }
+        : { ...draft, id: createId('social-draft'), createdAt: updatedAt, updatedAt };
+      const socialPosts = existing
+        ? current.socialPosts.map((item) => item.id === existing.id ? post : item)
+        : [post, ...current.socialPosts];
+      return { ...current, socialPosts };
+    });
+    setSocialEditor(undefined);
+    setToast('Social post draft saved locally');
+  }
+
   async function restoreWorkspace(serializedBackup: string) {
     const restoredState = parseWorkspaceBackup(serializedBackup);
     await saveLocalState(restoredState);
@@ -275,7 +294,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 4, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [] });
+      setAppState({ version: 5, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -357,6 +376,8 @@ function App() {
               onEditProject={setPortfolioEditor}
               onCreateOpportunity={() => setCareerEditor(null)}
               onEditOpportunity={setCareerEditor}
+              onCreateSocialPost={() => setSocialEditor(null)}
+              onEditSocialPost={setSocialEditor}
             />
           )}
         </main>
@@ -387,6 +408,7 @@ function App() {
       {studyGoalOpen && <StudyGoalDialog current={appState.studyGoal} onSave={saveStudyGoal} onClose={() => setStudyGoalOpen(false)} />}
       {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
       {careerEditor !== undefined && <CareerOpportunityDialog current={careerEditor} onSave={saveCareerOpportunity} onClose={() => setCareerEditor(undefined)} />}
+      {socialEditor !== undefined && <SocialPostDialog current={socialEditor} onSave={saveSocialPost} onClose={() => setSocialEditor(undefined)} />}
       {voiceOpen && (
         <VoiceAssistantDialog
           tasks={appState.tasks}
@@ -666,7 +688,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateSocialPost, onEditSocialPost }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -679,6 +701,8 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onEditProject: (project: PortfolioProject) => void;
   onCreateOpportunity: () => void;
   onEditOpportunity: (opportunity: CareerOpportunity) => void;
+  onCreateSocialPost: () => void;
+  onEditSocialPost: (post: SocialPostDraft) => void;
 }) {
   const copy = pageCopy[page];
   return (
@@ -693,7 +717,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
       {page === 'study' && <StudyModule goal={state.studyGoal} sessions={state.studySessions} onPlan={onPlanStudy} onStart={onStartStudy} />}
       {page === 'career' && <CareerModule opportunities={state.careerOpportunities} onCreate={onCreateOpportunity} onEdit={onEditOpportunity} />}
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
-      {page === 'studio' && <StudioModule onToast={onToast} />}
+      {page === 'studio' && <StudioModule posts={state.socialPosts} onCreate={onCreateSocialPost} onEdit={onEditSocialPost} />}
       {page === 'library' && <LibraryModule captures={state.captures} onCapture={onCapture} />}
       {page === 'observation' && <ObservationModule onToast={onToast} />}
       {page === 'activity' && <ActivityModule state={state} />}
@@ -849,19 +873,78 @@ function PortfolioProjectDialog({ current, onSave, onClose }: { current: Portfol
   );
 }
 
-function StudioModule({ onToast }: { onToast: (message: string) => void }) {
+function formatDateTimeLocal(value: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function StudioModule({ posts, onCreate, onEdit }: { posts: SocialPostDraft[]; onCreate: () => void; onEdit: (post: SocialPostDraft) => void }) {
+  const plannedPosts = posts.filter((post) => post.plannedFor);
+  const draftPosts = posts.filter((post) => !post.plannedFor);
+  const channelsUsed = new Set(posts.flatMap((post) => post.channels)).size;
+  const sortedPosts = [...posts].sort((left, right) => {
+    if (!left.plannedFor && !right.plannedFor) return right.updatedAt.localeCompare(left.updatedAt);
+    if (!left.plannedFor) return 1;
+    if (!right.plannedFor) return -1;
+    return left.plannedFor.localeCompare(right.plannedFor);
+  });
+
   return (
     <div className="module-layout">
-      <section className="module-hero studio-module-hero"><div><span className="panel-eyebrow">CREATOR STUDIO</span><h2>One idea.<br />Thoughtfully adapted.</h2><p>Draft once, tailor each version, and review every channel before it goes live.</p><button className="button button-primary" onClick={() => onToast('A local draft editor is coming next') }><Icon name="plus" size={15} /> Start a draft</button></div><div className="studio-orbit"><div className="studio-orbit-core"><Icon name="sparkles" size={24} /></div><span className="studio-node node-one">in</span><span className="studio-node node-two">x</span><span className="studio-node node-three">ig</span><span className="studio-node node-four">f</span></div></section>
-      <section className="panel module-panel"><PanelHeading eyebrow="LOCAL DRAFT CALENDAR" title="Ideas taking shape" action="Full calendar" onAction={() => onToast('No posts are scheduled; social accounts are not connected')} /><div className="draft-list"><DraftRow date="NOV 08" channel="LinkedIn · Personal story" title="What I learned from simplifying the first-run experience" tone="blue" /><DraftRow date="NOV 12" channel="X · Short reflection" title="A small principle about making complex tools feel calm" tone="violet" /><DraftRow date="NOV 16" channel="Instagram · Project reveal" title="A visual walkthrough of the community learning map" tone="amber" /></div></section>
-      <section className="module-note"><Icon name="shield" size={16} /><span>Publishing is disabled until an account is connected and each post is approved.</span></section>
+      <section className="module-hero studio-module-hero"><div><span className="panel-eyebrow">CREATOR STUDIO</span><h2>One idea.<br />Thoughtfully adapted.</h2><p>Write a post, choose its channels, and plan when you want to review it.</p><button className="button button-primary" onClick={onCreate}><Icon name="plus" size={15} /> Start a draft</button></div><div className="studio-orbit"><div className="studio-orbit-core"><Icon name="sparkles" size={24} /></div><span className="studio-node node-one">f</span><span className="studio-node node-two">x</span><span className="studio-node node-three">ig</span><span className="studio-node node-four">f</span></div></section>
+      <section className="module-stats"><MiniStat value={String(draftPosts.length)} label="Unplanned drafts" icon="file" /><MiniStat value={String(plannedPosts.length)} label="Planned locally" icon="calendar" /><MiniStat value={String(channelsUsed)} label="Channels in use" icon="sparkles" /></section>
+      <section className="panel module-panel"><PanelHeading eyebrow="LOCAL POST PLANNER" title="Drafts & planned times" action="New post" onAction={onCreate} />{sortedPosts.length ? <div className="draft-list">{sortedPosts.map((post, index) => <DraftRow key={post.id} post={post} tone={['blue', 'violet', 'amber'][index % 3]} onClick={() => onEdit(post)} />)}</div> : <div className="empty-state"><span className="empty-icon"><Icon name="sparkles" /></span><strong>A quiet space for your next post.</strong><span>Draft one idea, select Facebook, Instagram, or X, and add an optional review time.</span><button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={15} /> Create a post draft</button></div>}</section>
+      <section className="module-note"><Icon name="shield" size={16} /><span>Drafts and planned times stay in this browser. No account is connected and nothing is scheduled or published externally.</span></section>
     </div>
   );
 }
 
-function DraftRow({ date, channel, title, tone }: { date: string; channel: string; title: string; tone: string }) {
-  return <div className="draft-row"><span className={`draft-date draft-${tone}`}>{date}</span><span className="draft-copy"><small>{channel}</small><strong>{title}</strong></span><span className="draft-status"><i /> Idea</span><Icon name="chevron" size={15} />
-  </div>;
+function DraftRow({ post, tone, onClick }: { post: SocialPostDraft; tone: string; onClick: () => void }) {
+  const plannedLabel = post.plannedFor ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(post.plannedFor)).toUpperCase() : 'DRAFT';
+  const status = post.plannedFor ? 'Planned locally' : 'Draft';
+  return <button className="draft-row draft-row-button" onClick={onClick}><span className={`draft-date draft-${tone}`}>{plannedLabel}</span><span className="draft-copy"><small>{post.channels.join(' · ')}</small><strong>{post.title}</strong><span>{post.body}</span></span><span className="draft-status"><i className={post.plannedFor ? 'draft-status-planned' : ''} />{status}</span><Icon name="chevron" size={15} /></button>;
+}
+
+function SocialPostDialog({ current, onSave, onClose }: { current: SocialPostDraft | null; onSave: (draft: { id?: string; title: string; body: string; channels: SocialChannel[]; plannedFor: string; timezone: string }) => void; onClose: () => void }) {
+  const [title, setTitle] = useState(current?.title ?? '');
+  const [body, setBody] = useState(current?.body ?? '');
+  const [channels, setChannels] = useState<SocialChannel[]>(current?.channels ?? []);
+  const [plannedLocal, setPlannedLocal] = useState(formatDateTimeLocal(current?.plannedFor ?? ''));
+  const [preview, setPreview] = useState(false);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+  function toggleChannel(channel: SocialChannel) {
+    setChannels((selected) => selected.includes(channel) ? selected.filter((item) => item !== channel) : [...selected, channel]);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanTitle = title.trim();
+    const cleanBody = body.trim();
+    if (!cleanTitle || !cleanBody || channels.length === 0) return;
+    const plannedDate = plannedLocal ? new Date(plannedLocal) : null;
+    if (plannedDate && Number.isNaN(plannedDate.getTime())) return;
+    onSave({ id: current?.id, title: cleanTitle, body: cleanBody, channels, plannedFor: plannedDate?.toISOString() ?? '', timezone: timeZone });
+  }
+
+  return (
+    <div className="modal-scrim social-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card social-dialog" role="dialog" aria-modal="true" aria-labelledby="social-dialog-title">
+        <div className="dialog-top"><span className="dialog-icon"><Icon name="sparkles" size={18} /></span><button className="icon-button" aria-label="Close social post editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+        <span className="panel-eyebrow">LOCAL SOCIAL DRAFT</span><h2 id="social-dialog-title">{current ? 'Shape this post.' : 'Start with one idea.'}</h2><p>Choose channels and an optional local review time. Silverstone will not publish or schedule it with a service.</p>
+        <form onSubmit={submit}>
+          <label className="field-label" htmlFor="social-title">Draft name</label><input id="social-title" required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. What I learned this week" />
+          <fieldset className="social-channel-fieldset"><legend className="field-label">Channels</legend><div className="social-channel-options">{socialChannels.map((channel) => <label className={`social-channel-option ${channels.includes(channel) ? 'is-selected' : ''}`} key={channel}><input type="checkbox" checked={channels.includes(channel)} onChange={() => toggleChannel(channel)} /><span>{channel === 'X' ? '𝕏' : channel === 'Instagram' ? '◎' : 'f'}</span>{channel}</label>)}</div></fieldset>
+          <div className="social-content-heading"><label className="field-label" htmlFor="social-body">Post text</label><button className="text-action" type="button" onClick={() => setPreview((value) => !value)}>{preview ? 'Edit post' : 'Preview'}<Icon name={preview ? 'file' : 'external'} size={13} /></button></div>
+          {preview ? <article className="social-post-preview"><span className="social-preview-channels">{channels.join(' · ') || 'Choose a channel'}</span><strong>{title || 'Untitled post'}</strong><p>{body || 'Your post text will appear here.'}</p></article> : <textarea id="social-body" required rows={8} maxLength={5000} value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a thoughtful post. Keep platform-specific edits for a later review." />}
+          <label className="field-label" htmlFor="social-planned-for">Plan a review time <span>(optional)</span></label><input id="social-planned-for" type="datetime-local" value={plannedLocal} onChange={(event) => setPlannedLocal(event.target.value)} />
+          <div className="dialog-foot"><span><Icon name="shield" size={13} /> Stored locally · timezone {timeZone}</span><div className="social-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim() || !body.trim() || channels.length === 0}>Save draft<Icon name="arrow" size={14} /></button></div></div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function LibraryModule({ captures, onCapture }: { captures: CaptureItem[]; onCapture: () => void }) {
@@ -945,7 +1028,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, portfolio drafts, and career opportunities currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -959,8 +1042,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, portfolio drafts, career opportunities, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, portfolio drafts, and career opportunities from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, portfolio drafts, and career opportunities stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal and sessions, portfolio drafts with saved versions, and career opportunities. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal and sessions, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="CONNECTIONS" title="No services connected" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
     </>

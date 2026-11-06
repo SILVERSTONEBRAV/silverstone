@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Scope:** Product, interface, architecture, offline behavior, integrations, and release plan
-**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, career opportunity tracking, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history. Workspace backup/restore includes these local records. The minimal Rust health API is scaffolded; desktop/mobile packaging, sync, AI, and integrations remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
+**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, career opportunity tracking, social post drafts with local review times, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history. Workspace backup/restore includes these local records. The minimal Rust health API is scaffolded; desktop/mobile packaging, sync, AI, and integrations remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
 
 ## 1. Product vision
 

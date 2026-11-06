@@ -84,12 +84,26 @@ export interface CareerOpportunity {
   updatedAt: string;
 }
 
+export type SocialChannel = 'Facebook' | 'Instagram' | 'X';
+
+export interface SocialPostDraft {
+  id: string;
+  title: string;
+  body: string;
+  channels: SocialChannel[];
+  plannedFor: string;
+  timezone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LocalAppState {
-  version: 4;
+  version: 5;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
   studySessions: StudySession[];
   portfolioProjects: PortfolioProject[];
   careerOpportunities: CareerOpportunity[];
+  socialPosts: SocialPostDraft[];
 }
