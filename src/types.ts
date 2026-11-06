@@ -1,5 +1,6 @@
 export type PageKey =
   | 'today'
+  | 'inbox'
   | 'study'
   | 'career'
   | 'portfolio'
@@ -118,6 +119,25 @@ export interface CareerOpportunity {
   updatedAt: string;
 }
 
+export type EmailTriageCategory = 'Career' | 'Scholarship' | 'Work' | 'Personal' | 'Other';
+export type EmailPriority = 'High' | 'Normal' | 'Low';
+export type EmailStatus = 'Needs reply' | 'Draft ready' | 'Waiting' | 'Done' | 'Archived';
+
+export interface EmailItem {
+  id: string;
+  sender: string;
+  subject: string;
+  body: string;
+  receivedAt: string;
+  category: EmailTriageCategory;
+  priority: EmailPriority;
+  status: EmailStatus;
+  followUpDue: string;
+  replyDraft: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type SocialChannel = 'Facebook' | 'Instagram' | 'X';
 
 export interface SocialPostDraft {
@@ -212,7 +232,7 @@ export interface CareerEvidence {
 }
 
 export interface LocalAppState {
-  version: 11;
+  version: 12;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
@@ -224,4 +244,5 @@ export interface LocalAppState {
   interviewPreps: InterviewPrep[];
   starStories: StarStory[];
   careerEvidence: CareerEvidence[];
+  emailItems: EmailItem[];
 }

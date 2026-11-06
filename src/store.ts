@@ -1,4 +1,4 @@
-import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession } from './types';
+import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession } from './types';
 
 const DATABASE_NAME = 'silverstone-local';
 const DATABASE_VERSION = 1;
@@ -59,7 +59,7 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 11,
+    version: 12,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
@@ -71,17 +71,18 @@ export function createInitialState(): LocalAppState {
     interviewPreps: [],
     starStories: [],
     careerEvidence: [],
+    emailItems: [],
   };
 }
 
 function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown; interviewPreps?: unknown; starStories?: unknown; careerEvidence?: unknown };
+  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown; interviewPreps?: unknown; starStories?: unknown; careerEvidence?: unknown; emailItems?: unknown };
   if (!Array.isArray(candidate.tasks) || !candidate.tasks.every(isAgentTask)
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 11,
+      version: 12,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
@@ -93,10 +94,11 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       interviewPreps: [],
       starStories: [],
       careerEvidence: [],
+      emailItems: [],
     };
   }
   const version = candidate.version;
-  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version) || !Array.isArray(candidate.studySessions)) return null;
+  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(version) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -127,6 +129,8 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!Array.isArray(starStories) || !starStories.every(isStarStory)) return null;
   const careerEvidence = version >= 9 ? candidate.careerEvidence : [];
   if (!Array.isArray(careerEvidence) || !careerEvidence.every(isCareerEvidence)) return null;
+  const emailItems = version >= 12 ? candidate.emailItems : [];
+  if (!Array.isArray(emailItems) || emailItems.length > 100 || !emailItems.every(isEmailItem)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
     ? {
@@ -137,7 +141,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 11,
+    version: 12,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
@@ -149,6 +153,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     interviewPreps,
     starStories,
     careerEvidence,
+    emailItems,
   };
 }
 
@@ -377,6 +382,24 @@ function isCareerEvidence(value: unknown): value is CareerEvidence {
     && validUrl && validVerification
     && typeof evidence.createdAt === 'string' && Number.isFinite(Date.parse(evidence.createdAt))
     && typeof evidence.updatedAt === 'string' && Number.isFinite(Date.parse(evidence.updatedAt));
+}
+
+function isEmailItem(value: unknown): value is EmailItem {
+  if (!value || typeof value !== 'object') return false;
+  const email = value as Partial<EmailItem>;
+  const categories: EmailTriageCategory[] = ['Career', 'Scholarship', 'Work', 'Personal', 'Other'];
+  const priorities: EmailPriority[] = ['High', 'Normal', 'Low'];
+  const statuses: EmailStatus[] = ['Needs reply', 'Draft ready', 'Waiting', 'Done', 'Archived'];
+  const validDate = (date: unknown) => typeof date === 'string' && (date === '' || isDateOnly(date));
+  return typeof email.id === 'string'
+    && typeof email.sender === 'string' && email.sender.trim().length > 0 && email.sender.length <= 250
+    && typeof email.subject === 'string' && email.subject.trim().length > 0 && email.subject.length <= 500
+    && typeof email.body === 'string' && email.body.trim().length > 0 && email.body.length <= 8000
+    && validDate(email.receivedAt) && categories.includes(email.category as EmailTriageCategory)
+    && priorities.includes(email.priority as EmailPriority) && statuses.includes(email.status as EmailStatus)
+    && validDate(email.followUpDue) && typeof email.replyDraft === 'string' && email.replyDraft.length <= 8000
+    && typeof email.createdAt === 'string' && Number.isFinite(Date.parse(email.createdAt))
+    && typeof email.updatedAt === 'string' && Number.isFinite(Date.parse(email.updatedAt));
 }
 
 export function createWorkspaceBackup(state: LocalAppState): string {

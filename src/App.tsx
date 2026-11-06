@@ -3,7 +3,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
-import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 import { DEFAULT_QUESTIONS_BY_FORMAT, DEFAULT_QUESTIONS_TO_ASK, INTERVIEW_FORMATS, analyzeFillerWords, assessInterviewAnswer, calculateReadiness } from './interview';
 
@@ -20,6 +20,7 @@ const navigation: { label: string; items: { key: PageKey; label: string; icon: I
     label: 'WORKSPACE',
     items: [
       { key: 'today', label: 'Today', icon: 'home' },
+      { key: 'inbox', label: 'Inbox', icon: 'inbox' },
       { key: 'study', label: 'Study', icon: 'book' },
       { key: 'career', label: 'Career', icon: 'briefcase' },
       { key: 'portfolio', label: 'Portfolio', icon: 'layers' },
@@ -37,6 +38,7 @@ const navigation: { label: string; items: { key: PageKey; label: string; icon: I
 ];
 
 const pageCopy: Record<Exclude<PageKey, 'today' | 'settings'>, { title: string; subtitle: string; eyebrow: string }> = {
+  inbox: { title: 'Messages, at your pace.', subtitle: 'Triage selected emails and shape a reply draft. Nothing is connected or sent.', eyebrow: 'LOCAL INBOX' },
   study: { title: 'Study, with intention.', subtitle: 'Build a steady rhythm around the time and energy you actually have.', eyebrow: 'LEARNING SPACE' },
   career: { title: 'Move your next step forward.', subtitle: 'Keep opportunities, applications, and evidence in one calm place.', eyebrow: 'CAREER SPACE' },
   portfolio: { title: 'Show the work behind the work.', subtitle: 'Shape project notes into clear, evidence-backed case studies.', eyebrow: 'YOUR PORTFOLIO' },
@@ -105,6 +107,7 @@ function App() {
   const [studyCardEditor, setStudyCardEditor] = useState<StudyCard | null | undefined>(undefined);
   const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
   const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
+  const [emailEditor, setEmailEditor] = useState<EmailItem | null | undefined>(undefined);
   const [evidenceEditor, setEvidenceEditor] = useState<CareerEvidence | null | undefined>(undefined);
   const [interviewEditor, setInterviewEditor] = useState<{ prep: InterviewPrep | null; opportunityId?: string } | undefined>(undefined);
   const [interviewPractice, setInterviewPractice] = useState<InterviewPrep | undefined>(undefined);
@@ -309,6 +312,27 @@ function App() {
     setToast('Opportunity saved locally');
   }
 
+  function saveEmailItem(draft: Omit<EmailItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) {
+    const updatedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.emailItems.find((item) => item.id === draft.id);
+      const email: EmailItem = existing
+        ? { ...existing, ...draft, id: existing.id, updatedAt }
+        : { ...draft, id: createId('email-item'), createdAt: updatedAt, updatedAt };
+      const emailItems = existing
+        ? current.emailItems.map((item) => item.id === existing.id ? email : item)
+        : [email, ...current.emailItems];
+      return { ...current, emailItems };
+    });
+    setEmailEditor(undefined);
+    setToast(draft.id ? 'Email record updated locally' : 'Email added to your local inbox');
+  }
+
+  function deleteEmailItem(id: string) {
+    setAppState((current) => ({ ...current, emailItems: current.emailItems.filter((item) => item.id !== id) }));
+    setToast('Email record removed from this device');
+  }
+
   function saveCareerEvidence(draft: { id?: string; kind: CareerEvidenceKind; title: string; organization: string; timeframe: string; details: string; skills: string[]; sourceLabel: string; sourceUrl: string; verified: boolean }) {
     const updatedAt = new Date().toISOString();
     setAppState((current) => {
@@ -505,7 +529,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 11, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [] });
+      setAppState({ version: 12, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [], emailItems: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -601,6 +625,9 @@ function App() {
               onDeleteEvidence={deleteCareerEvidence}
               onCreateSocialPost={() => setSocialEditor(null)}
               onEditSocialPost={setSocialEditor}
+              onCreateEmail={() => setEmailEditor(null)}
+              onEditEmail={setEmailEditor}
+              onDeleteEmail={deleteEmailItem}
             />
           )}
         </main>
@@ -623,6 +650,7 @@ function App() {
         <SearchDialog
           tasks={appState.tasks}
           captures={appState.captures}
+          emails={appState.emailItems}
           onClose={() => setSearchOpen(false)}
           onNavigate={(page) => { navigate(page); setSearchOpen(false); }}
         />
@@ -632,6 +660,7 @@ function App() {
       {studyCardEditor !== undefined && <StudyCardDialog current={studyCardEditor} defaultTopic={appState.studyGoal?.topic ?? ''} onSave={saveStudyCard} onClose={() => setStudyCardEditor(undefined)} />}
       {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
       {careerEditor !== undefined && <CareerOpportunityDialog current={careerEditor} onSave={saveCareerOpportunity} onClose={() => setCareerEditor(undefined)} />}
+      {emailEditor !== undefined && <EmailDialog current={emailEditor} onSave={saveEmailItem} onClose={() => setEmailEditor(undefined)} />}
       {evidenceEditor !== undefined && <CareerEvidenceDialog current={evidenceEditor} onSave={saveCareerEvidence} onClose={() => setEvidenceEditor(undefined)} />}
       {interviewEditor !== undefined && (
         <InterviewPrepDialog
@@ -764,6 +793,7 @@ function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocu
   const activeOpportunities = state.careerOpportunities.filter((item) => item.stage !== 'Closed');
   const nextOpportunity = [...activeOpportunities].filter((item) => item.deadline).sort((left, right) => left.deadline.localeCompare(right.deadline))[0] ?? null;
   const nextCareerAction = [...activeOpportunities].filter((item) => item.nextAction.trim()).sort((left, right) => (left.nextActionDue || '9999-99-99').localeCompare(right.nextActionDue || '9999-99-99'))[0] ?? null;
+  const nextEmailFollowUp = [...state.emailItems].filter((item) => item.followUpDue && !['Done', 'Archived'].includes(item.status)).sort((left, right) => left.followUpDue.localeCompare(right.followUpDue))[0] ?? null;
   const nextInterview = [...state.interviewPreps]
     .filter((item) => item.scheduledAt && new Date(item.scheduledAt).getTime() > Date.now())
     .sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt))[0] ?? null;
@@ -782,10 +812,14 @@ function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocu
   const careerActionTiming = nextCareerAction?.nextActionDue
     ? nextCareerAction.nextActionDue < todayKey ? `Overdue · ${formatDeadline(nextCareerAction.nextActionDue)}` : nextCareerAction.nextActionDue === todayKey ? 'Due today' : `Due ${formatDeadline(nextCareerAction.nextActionDue)}`
     : 'No date set';
+  const emailFollowUpTiming = nextEmailFollowUp?.followUpDue
+    ? nextEmailFollowUp.followUpDue < todayKey ? `Overdue · ${formatDeadline(nextEmailFollowUp.followUpDue)}` : nextEmailFollowUp.followUpDue === todayKey ? 'Due today' : `Due ${formatDeadline(nextEmailFollowUp.followUpDue)}`
+    : '';
   const radarItems = [
     ...(nextInterview ? [{ icon: 'briefcase' as const, label: 'INTERVIEW', title: `${nextInterview.company} · ${nextInterview.format}`, detail: `${formatPlannedTime(nextInterview.scheduledAt)} · ${nextInterview.readinessScore > 0 ? `${nextInterview.readinessScore}% readiness` : 'Needs prep'}`, onClick: () => onNavigate('career') }] : []),
     ...(dueCards.length ? [{ icon: 'clock' as const, label: 'RECALL', title: `${dueCards.length} recall card${dueCards.length === 1 ? '' : 's'} due`, detail: `Spaced review · ${dueCards[0]?.topic ?? 'General'}`, onClick: () => onNavigate('study') }] : []),
     ...(nextCareerAction ? [{ icon: 'check' as const, label: 'CAREER NEXT ACTION', title: nextCareerAction.nextAction, detail: `${nextCareerAction.title} · ${careerActionTiming}`, onClick: () => onNavigate('career') }] : []),
+    ...(nextEmailFollowUp ? [{ icon: 'inbox' as const, label: 'EMAIL FOLLOW-UP', title: nextEmailFollowUp.subject, detail: `${nextEmailFollowUp.sender} · ${emailFollowUpTiming}`, onClick: () => onNavigate('inbox') }] : []),
     ...(studyGoal ? [{ icon: 'book' as const, label: 'STUDY', title: studyGoal.topic, detail: checkedInToday ? `${studyGoal.availableMinutesToday} minutes available · ${suggestedStudyMinutes ? `${suggestedStudyMinutes}-minute session suggested` : 'no time planned today'}` : 'Check in with today’s free time to plan a session.', onClick: () => onNavigate('study') }] : []),
     ...(nextOpportunity ? [{ icon: 'briefcase' as const, label: 'DEADLINE', title: nextOpportunity.title, detail: `${nextOpportunity.kind} · ${formatDeadline(nextOpportunity.deadline)} · ${nextOpportunity.organization}`, onClick: () => onNavigate('career') }] : []),
     ...(nextPlannedPost ? [{ icon: 'send' as const, label: 'CONTENT PLAN', title: nextPlannedPost.title || nextPlannedPost.channels.join(' + '), detail: `${formatPlannedTime(nextPlannedPost.plannedFor)} · local draft plan; nothing is published`, onClick: () => onNavigate('studio') }] : []),
@@ -970,7 +1004,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateStory, onEditStory, onDeleteStory, onCreateEvidence, onEditEvidence, onDeleteEvidence, onCreateSocialPost, onEditSocialPost }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateStory, onEditStory, onDeleteStory, onCreateEvidence, onEditEvidence, onDeleteEvidence, onCreateSocialPost, onEditSocialPost, onCreateEmail, onEditEmail, onDeleteEmail }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -998,6 +1032,9 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onDeleteEvidence: (id: string) => void;
   onCreateSocialPost: () => void;
   onEditSocialPost: (post: SocialPostDraft) => void;
+  onCreateEmail: () => void;
+  onEditEmail: (email: EmailItem) => void;
+  onDeleteEmail: (id: string) => void;
 }) {
   const copy = pageCopy[page];
   return (
@@ -1006,7 +1043,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
         <div><div className="eyebrow-line"><span className="eyebrow-dot" /> {copy.eyebrow}</div><h1>{copy.title}</h1><p>{copy.subtitle}</p></div>
         <div className="heading-actions">
           <button className="button button-secondary" onClick={onCapture}><Icon name="sparkle" size={16} /> Capture</button>
-          <button className="button button-primary" onClick={page === 'library' ? onCapture : onAddTask}><Icon name="plus" size={16} /> {page === 'library' ? 'Add a note' : 'Add a task'}</button>
+          <button className="button button-primary" onClick={page === 'library' ? onCapture : page === 'inbox' ? onCreateEmail : onAddTask}><Icon name="plus" size={16} /> {page === 'library' ? 'Add a note' : page === 'inbox' ? 'Add email' : 'Add a task'}</button>
         </div>
       </div>
       {page === 'study' && <StudyModule goal={state.studyGoal} sessions={state.studySessions} cards={state.studyCards} onPlan={onPlanStudy} onStart={onStartStudy} onAddCard={onAddStudyCard} onEditCard={onEditStudyCard} onReviewCard={onReviewStudyCard} />}
@@ -1033,6 +1070,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
       {page === 'studio' && <StudioModule posts={state.socialPosts} onCreate={onCreateSocialPost} onEdit={onEditSocialPost} />}
       {page === 'library' && <LibraryModule captures={state.captures} onCapture={onCapture} />}
+      {page === 'inbox' && <EmailDesk emails={state.emailItems} onCreate={onCreateEmail} onEdit={onEditEmail} onDelete={onDeleteEmail} onToast={onToast} />}
       {page === 'observation' && <ObservationModule onToast={onToast} />}
       {page === 'activity' && <ActivityModule state={state} />}
       <div className="module-footer-link"><button className="text-action" onClick={() => onNavigate('today')}>Back to Today <Icon name="arrow" size={14} /></button></div>
@@ -2509,6 +2547,132 @@ function SocialPostDialog({ current, onSave, onClose }: { current: SocialPostDra
   );
 }
 
+function suggestEmailCategory(subject: string, body: string): { category: EmailTriageCategory; reason: string } {
+  const text = `${subject} ${body}`.toLowerCase();
+  if (/\b(scholarship|fellowship|financial aid|grant|tuition award)\b/.test(text)) return { category: 'Scholarship', reason: 'matched scholarship or funding terms' };
+  if (/\b(interview|recruiter|job application|hiring|offer letter|resume|résumé)\b/.test(text)) return { category: 'Career', reason: 'matched job search or interview terms' };
+  if (/\b(project|team|meeting|workstream|colleague|client|deliverable)\b/.test(text)) return { category: 'Work', reason: 'matched work-related terms' };
+  if (/\b(family|friend|personal|birthday|dinner|weekend)\b/.test(text)) return { category: 'Personal', reason: 'matched personal terms' };
+  return { category: 'Other', reason: 'no category keywords matched' };
+}
+
+type EmailReplyStarter = 'acknowledge' | 'clarify' | 'update' | 'decline';
+
+function createEmailReplyStarter(subject: string, starter: EmailReplyStarter): string {
+  const topic = subject.trim() ? ` regarding “${subject.trim()}”` : '';
+  const endings: Record<EmailReplyStarter, string> = {
+    acknowledge: `Thank you for your message${topic}. I’ve received the details and will [next step] by [date].`,
+    clarify: `Thank you for your message${topic}. Could you please clarify [specific question or detail]? That will help me respond accurately.`,
+    update: `I’m writing with a brief update${topic}: [add the verified status]. I expect to [next step] by [date].`,
+    decline: `Thank you for considering me${topic}. After reviewing the details, I won’t be able to proceed at this time. I appreciate your understanding.`,
+  };
+  return `Hello,\n\n${endings[starter]}\n\nBest,\n[Your name]`;
+}
+
+function EmailDesk({ emails, onCreate, onEdit, onDelete, onToast }: { emails: EmailItem[]; onCreate: () => void; onEdit: (email: EmailItem) => void; onDelete: (id: string) => void; onToast: (message: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'All' | EmailStatus>('All');
+  const [categoryFilter, setCategoryFilter] = useState<'All' | EmailTriageCategory>('All');
+  const today = localDateKey();
+  const needsReply = emails.filter((email) => email.status === 'Needs reply').length;
+  const draftReady = emails.filter((email) => email.status === 'Draft ready').length;
+  const followUpsDue = emails.filter((email) => email.followUpDue && email.followUpDue <= today && !['Done', 'Archived'].includes(email.status)).length;
+  const needle = query.trim().toLowerCase();
+  const filtered = [...emails]
+    .filter((email) => statusFilter === 'All' || email.status === statusFilter)
+    .filter((email) => categoryFilter === 'All' || email.category === categoryFilter)
+    .filter((email) => !needle || [email.sender, email.subject, email.body, email.replyDraft].join(' ').toLowerCase().includes(needle))
+    .sort((left, right) => (right.receivedAt || right.createdAt).localeCompare(left.receivedAt || left.createdAt));
+
+  async function copyReply(email: EmailItem) {
+    if (!email.replyDraft.trim()) return;
+    try {
+      await navigator.clipboard.writeText(email.replyDraft);
+      onToast('Reply draft copied. Review it before using it.');
+    } catch {
+      onToast('Clipboard access is unavailable in this browser.');
+    }
+  }
+
+  return (
+    <div className="module-layout email-desk-layout">
+      <section className="module-stats">
+        <MiniStat value={String(needsReply)} label="Needs a reply" icon="inbox" />
+        <MiniStat value={String(draftReady)} label="Drafts ready to review" icon="file" />
+        <MiniStat value={String(followUpsDue)} label="Follow-ups due" icon="calendar" />
+      </section>
+      <section className="panel module-panel email-desk-panel">
+        <PanelHeading eyebrow="MANUAL EMAIL TRIAGE" title="Your local inbox" action="Add email" onAction={onCreate} />
+        <div className="email-desk-toolbar">
+          <label className="sr-only" htmlFor="email-desk-search">Search local emails</label>
+          <div className="evidence-search"><Icon name="search" size={14} /><input id="email-desk-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search sender, subject, message, or draft…" /></div>
+          <label><span className="sr-only">Filter by status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'All' | EmailStatus)}><option>All</option>{(['Needs reply', 'Draft ready', 'Waiting', 'Done', 'Archived'] as EmailStatus[]).map((status) => <option key={status}>{status}</option>)}</select></label>
+          <label><span className="sr-only">Filter by category</span><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as 'All' | EmailTriageCategory)}><option>All</option>{(['Career', 'Scholarship', 'Work', 'Personal', 'Other'] as EmailTriageCategory[]).map((category) => <option key={category}>{category}</option>)}</select></label>
+        </div>
+        <div className="email-card-list">
+          {filtered.length ? filtered.map((email) => (
+            <article className={`email-card email-priority-${email.priority.toLowerCase()}`} key={email.id}>
+              <div className="email-card-top"><span className="email-category-pill">{email.category}</span><span className={`email-priority-pill email-priority-pill-${email.priority.toLowerCase()}`}>{email.priority} priority</span><span className={`email-status-pill email-status-${email.status.toLowerCase().replaceAll(' ', '-')}`}>{email.status}</span></div>
+              <h3>{email.subject}</h3>
+              <div className="email-card-meta"><span>{email.sender}</span><span>{email.receivedAt ? formatDeadline(email.receivedAt) : 'Date not recorded'}</span>{email.followUpDue && <span className={email.followUpDue < today && !['Done', 'Archived'].includes(email.status) ? 'email-overdue' : ''}>Follow up {email.followUpDue < today ? 'overdue' : 'by'} {formatDeadline(email.followUpDue)}</span>}</div>
+              <details className="email-message-details"><summary>Review original message</summary><p>{email.body}</p></details>
+              {email.replyDraft.trim() ? <div className="email-reply-preview"><small>LOCAL REPLY DRAFT</small><pre>{email.replyDraft}</pre></div> : <p className="email-no-draft">No reply draft yet.</p>}
+              <div className="email-card-actions"><button className="button button-secondary" onClick={() => onEdit(email)}><Icon name="more" size={14} /> Review / edit</button><button className="button button-secondary" onClick={() => void copyReply(email)} disabled={!email.replyDraft.trim()}><Icon name="file" size={14} /> Copy draft</button><button className="text-action email-remove" onClick={() => { if (window.confirm(`Remove “${email.subject}” from the local inbox?`)) onDelete(email.id); }}>Remove</button></div>
+            </article>
+          )) : <div className="email-desk-empty"><span className="empty-icon"><Icon name={emails.length ? 'search' : 'inbox'} /></span><strong>{emails.length ? 'No emails match these filters.' : 'No emails saved here yet.'}</strong><span>{emails.length ? 'Try another search or filter.' : 'Paste a selected message when you want help organizing it or preparing a reply.'}</span>{!emails.length && <button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={14} /> Add a message</button>}</div>}
+        </div>
+      </section>
+      <section className="module-note email-privacy-note"><Icon name="shield" size={16} /><span>Messages and drafts stay in this browser unless you explicitly create a cloud copy. Browser storage and backups are not encrypted. This inbox is not connected to an email account; Silverstone never sends these drafts.</span></section>
+    </div>
+  );
+}
+
+function EmailDialog({ current, onSave, onClose }: { current: EmailItem | null; onSave: (draft: Omit<EmailItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void; onClose: () => void }) {
+  const [sender, setSender] = useState(current?.sender ?? '');
+  const [subject, setSubject] = useState(current?.subject ?? '');
+  const [body, setBody] = useState(current?.body ?? '');
+  const [receivedAt, setReceivedAt] = useState(current?.receivedAt ?? localDateKey());
+  const [category, setCategory] = useState<EmailTriageCategory>(current?.category ?? 'Other');
+  const [priority, setPriority] = useState<EmailPriority>(current?.priority ?? 'Normal');
+  const [status, setStatus] = useState<EmailStatus>(current?.status ?? 'Needs reply');
+  const [followUpDue, setFollowUpDue] = useState(current?.followUpDue ?? '');
+  const [replyDraft, setReplyDraft] = useState(current?.replyDraft ?? '');
+  const [replyStarter, setReplyStarter] = useState<EmailReplyStarter>('acknowledge');
+  const categoryHint = suggestEmailCategory(subject, body);
+
+  function insertReplyStarter() {
+    if (replyDraft.trim() && !window.confirm('Replace the current reply draft with this starter?')) return;
+    setReplyDraft(createEmailReplyStarter(subject, replyStarter));
+    setStatus('Draft ready');
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sender.trim() || !subject.trim() || !body.trim()) return;
+    onSave({ id: current?.id, sender: sender.trim(), subject: subject.trim(), body: body.trim(), receivedAt, category, priority, status, followUpDue, replyDraft: replyDraft.trim() });
+  }
+
+  return (
+    <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card career-dialog email-dialog" role="dialog" aria-modal="true" aria-labelledby="email-dialog-title">
+        <div className="dialog-top"><span className="dialog-icon"><Icon name="inbox" size={18} /></span><button className="icon-button" aria-label="Close email editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+        <span className="panel-eyebrow">LOCAL INBOX · MANUAL REVIEW</span><h2 id="email-dialog-title">{current ? 'Review this email.' : 'Add a selected email.'}</h2><p>Paste only the message content you want to work with. No email account is connected, and this does not send anything.</p>
+        <form onSubmit={submit}>
+          <div className="career-form-grid"><div><label className="field-label" htmlFor="email-sender">Sender name or address</label><input id="email-sender" required maxLength={250} value={sender} onChange={(event) => setSender(event.target.value)} placeholder="Who sent the message?" /></div><div><label className="field-label" htmlFor="email-subject">Subject</label><input id="email-subject" required maxLength={500} value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" /></div></div>
+          <div className="career-form-grid"><div><label className="field-label" htmlFor="email-received-at">Received date (optional)</label><input id="email-received-at" type="date" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} /></div><div><label className="field-label" htmlFor="email-follow-up">Follow-up date (optional)</label><input id="email-follow-up" type="date" value={followUpDue} onChange={(event) => setFollowUpDue(event.target.value)} /></div></div>
+          <div className="career-form-grid email-triage-fields"><div><label className="field-label" htmlFor="email-category">Category</label><select id="email-category" value={category} onChange={(event) => setCategory(event.target.value as EmailTriageCategory)}>{(['Career', 'Scholarship', 'Work', 'Personal', 'Other'] as EmailTriageCategory[]).map((item) => <option key={item}>{item}</option>)}</select></div><div><label className="field-label" htmlFor="email-priority">Priority</label><select id="email-priority" value={priority} onChange={(event) => setPriority(event.target.value as EmailPriority)}>{(['High', 'Normal', 'Low'] as EmailPriority[]).map((item) => <option key={item}>{item}</option>)}</select></div><div><label className="field-label" htmlFor="email-status">Triage status</label><select id="email-status" value={status} onChange={(event) => setStatus(event.target.value as EmailStatus)}>{(['Needs reply', 'Draft ready', 'Waiting', 'Done', 'Archived'] as EmailStatus[]).map((item) => <option key={item}>{item}</option>)}</select></div></div>
+          <div className="email-keyword-hint"><span><Icon name="sparkle" size={14} /><span><strong>Local keyword hint: {categoryHint.category}</strong><small>{categoryHint.reason}. This simple rule may be wrong; check it yourself.</small></span></span><button type="button" className="text-action" onClick={() => setCategory(categoryHint.category)}>Use hint</button></div>
+          <label className="field-label" htmlFor="email-message-body">Selected message text</label><textarea id="email-message-body" required rows={8} maxLength={8000} value={body} onChange={(event) => setBody(event.target.value)} placeholder="Paste the email text you want to review…" />
+          <div className="email-reply-tools"><div><label className="field-label" htmlFor="email-reply-starter">Reply starter</label><select id="email-reply-starter" value={replyStarter} onChange={(event) => setReplyStarter(event.target.value as EmailReplyStarter)}><option value="acknowledge">Acknowledge</option><option value="clarify">Ask for clarification</option><option value="update">Share an update</option><option value="decline">Decline politely</option></select></div><button type="button" className="button button-secondary" onClick={insertReplyStarter}>Insert starter</button></div>
+          <label className="field-label" htmlFor="email-reply-draft">Reply draft</label><textarea id="email-reply-draft" rows={7} maxLength={8000} value={replyDraft} onChange={(event) => setReplyDraft(event.target.value)} placeholder="Write or edit your reply. Check names, dates, claims, and attachments before using it." />
+          <p className="email-review-hint">Reply starters are fixed local templates, not AI-generated answers. Review every detail before copying a draft into your mail app.</p>
+          <div className="dialog-foot"><span><Icon name="shield" size={13} /> Local only · never sent</span><div className="career-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!sender.trim() || !subject.trim() || !body.trim()}>{current ? 'Save changes' : 'Save email'}<Icon name="arrow" size={14} /></button></div></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function LibraryModule({ captures, onCapture }: { captures: CaptureItem[]; onCapture: () => void }) {
   return (
     <div className="module-layout">
@@ -2794,7 +2958,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, career evidence records, portfolio drafts, career opportunities and scholarship checklists, and social post drafts currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, career evidence records, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social post drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -2808,8 +2972,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, career evidence records, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, career evidence records, portfolio drafts with saved versions, career opportunities and scholarship checklists, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, career evidence records, portfolio drafts, career opportunities, social drafts, email messages and reply drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, career evidence records, portfolio drafts with saved versions, career opportunities and scholarship checklists, email messages and reply drafts, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <CloudWorkspacePanel workspace={state} onRestore={onRestoreCloud} />
         <section className="panel settings-panel"><PanelHeading eyebrow="APP CONNECTIONS" title="External services" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
@@ -2928,20 +3092,21 @@ function StudyGoalDialog({ current, onSave, onClose }: { current: StudyGoal | nu
   );
 }
 
-function SearchDialog({ tasks, captures, onClose, onNavigate }: { tasks: AgentTask[]; captures: CaptureItem[]; onClose: () => void; onNavigate: (page: PageKey) => void }) {
+function SearchDialog({ tasks, captures, emails, onClose, onNavigate }: { tasks: AgentTask[]; captures: CaptureItem[]; emails: EmailItem[]; onClose: () => void; onNavigate: (page: PageKey) => void }) {
   const [query, setQuery] = useState('');
   const results = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return [];
     const taskResults = tasks.filter((task) => task.title.toLowerCase().includes(normalized)).map((task) => ({ id: task.id, title: task.title, detail: `${task.category} task`, page: 'today' as PageKey }));
     const captureResults = captures.filter((capture) => capture.text.toLowerCase().includes(normalized)).map((capture) => ({ id: capture.id, title: capture.text, detail: 'Local note', page: 'library' as PageKey }));
-    return [...taskResults, ...captureResults].slice(0, 6);
-  }, [captures, query, tasks]);
+    const emailResults = emails.filter((email) => [email.sender, email.subject, email.body, email.replyDraft].join(' ').toLowerCase().includes(normalized)).map((email) => ({ id: email.id, title: email.subject, detail: `Email · ${email.sender}`, page: 'inbox' as PageKey }));
+    return [...taskResults, ...captureResults, ...emailResults].slice(0, 6);
+  }, [captures, emails, query, tasks]);
 
   return (
     <div className="modal-scrim search-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search local workspace">
-        <div className="search-dialog-input"><Icon name="search" size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tasks and notes…" /><kbd>ESC</kbd><button className="icon-button" aria-label="Close search" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="search-dialog-input"><Icon name="search" size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tasks, notes, and local emails…" /><kbd>ESC</kbd><button className="icon-button" aria-label="Close search" onClick={onClose}><Icon name="close" size={16} /></button></div>
         {query.trim() ? <div className="search-results">{results.length ? results.map((result) => <button key={result.id} className="search-result" onClick={() => onNavigate(result.page)}><span className="search-result-icon"><Icon name={result.detail.includes('task') ? 'check' : 'file'} size={15} /></span><span><strong>{result.title}</strong><small>{result.detail}</small></span><Icon name="arrow" size={14} /></button>) : <div className="search-empty">No local results for “{query}”.</div>}</div> : <div className="search-hint"><span>Search stays within your local preview data.</span><span><kbd>↵</kbd> to open a result</span></div>}
       </section>
     </div>

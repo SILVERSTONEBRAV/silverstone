@@ -2,6 +2,7 @@ import type { SVGProps } from 'react';
 
 export type IconName =
   | 'home'
+  | 'inbox'
   | 'book'
   | 'briefcase'
   | 'layers'
@@ -44,6 +45,7 @@ export type IconName =
 
 const iconPaths: Record<IconName, string> = {
   home: 'M3 10.8 12 3l9 7.8M5.5 9.2v11h13v-11M9.2 20.2v-6.4h5.6v6.4',
+  inbox: 'M4 4h16v13h-5l-2 3h-2l-2-3H4zM4 13h5l1.5 2h3L15 13h5',
   book: 'M4 5.2A2.2 2.2 0 0 1 6.2 3H20v17H6.2A2.2 2.2 0 0 0 4 22V5.2ZM4 17.8a2.2 2.2 0 0 1 2.2-2.2H20M8 7h8M8 10.5h7',
   briefcase: 'M3 8.5h18v12H3zM8 8.5V5h8v3.5M3 13h18M10 13v2h4v-2',
   layers: 'm12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5',

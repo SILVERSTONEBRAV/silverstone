@@ -1040,6 +1040,53 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
 .story-card-titles small { color: var(--muted); font-size: 8px; }
 .story-metric-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; color: #1e704a; background: #e6f6ee; border: 1px solid #bce6d0; border-radius: 6px; font-size: 9px; font-weight: 700; font-family: 'DM Mono', monospace; }
 .story-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.email-desk-layout { display: flex; flex-direction: column; gap: 14px; }
+.email-desk-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.email-desk-toolbar .evidence-search { max-width: 460px; }
+.email-desk-toolbar select { min-height: 36px; padding: 7px 10px; color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 9px; }
+.email-card-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.email-card { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.email-priority-high { border-left: 3px solid #c76666; }
+.email-card-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.email-category-pill, .email-priority-pill, .email-status-pill { padding: 4px 7px; border-radius: 5px; font-size: 8px; font-weight: 700; }
+.email-category-pill { color: #5961b9; background: #eeefff; }
+.email-priority-pill { color: #777; background: var(--surface-soft); }
+.email-priority-pill-high { color: #a13e3e; background: #fdf0f0; }
+.email-priority-pill-low { color: #55705f; background: #edf7f0; }
+.email-status-pill { color: #666; background: var(--surface-soft); }
+.email-status-needs-reply { color: #9b5a26; background: #fff2df; }
+.email-status-draft-ready { color: #4d5d9c; background: #edf0ff; }
+.email-status-done, .email-status-archived { color: #4f785e; background: #edf7f0; }
+.email-card h3 { margin: 0; color: var(--ink-strong); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.email-card-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 8px; }
+.email-overdue { color: #b64c4c; font-weight: 700; }
+.email-message-details { padding: 9px 10px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 7px; color: var(--muted-strong); font-size: 9px; }
+.email-message-details summary { color: var(--ink); font-weight: 600; cursor: pointer; }
+.email-message-details p { margin: 8px 0 0; max-height: 240px; overflow: auto; white-space: pre-wrap; line-height: 1.55; }
+.email-reply-preview { display: flex; flex-direction: column; gap: 5px; padding: 10px; background: color-mix(in srgb, #6c73d5 5%, var(--surface)); border: 1px solid var(--line); border-radius: 7px; }
+.email-reply-preview small { color: #6269c1; font: 700 7px 'DM Mono', monospace; letter-spacing: .5px; }
+.email-reply-preview pre { max-height: 140px; overflow: auto; margin: 0; color: var(--muted-strong); font: inherit; font-size: 9px; line-height: 1.5; white-space: pre-wrap; }
+.email-no-draft { margin: 0; color: var(--muted); font-size: 9px; }
+.email-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: auto; padding-top: 9px; border-top: 1px solid var(--line); }
+.email-card-actions .button { padding: 6px 9px; font-size: 8px; }
+.email-remove { margin-left: auto; color: #a44d4d; }
+.email-desk-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 18px; color: var(--muted); text-align: center; }
+.email-desk-empty strong { color: var(--ink); font-size: 12px; }
+.email-desk-empty > span:not(.empty-icon) { max-width: 420px; font-size: 9px; line-height: 1.5; }
+.email-desk-empty .button { margin-top: 4px; }
+.email-privacy-note { margin-top: 0; }
+.email-dialog { width: min(100%, 760px); }
+.email-dialog form { display: flex; flex-direction: column; gap: 8px; }
+.email-dialog .field-label { margin-bottom: 4px; }
+.email-keyword-hint { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; color: #6168c2; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; }
+.email-keyword-hint > span { display: flex; align-items: flex-start; gap: 7px; }
+.email-keyword-hint > span > span { display: flex; flex-direction: column; gap: 3px; }
+.email-keyword-hint strong { color: var(--ink); font-size: 9px; }
+.email-keyword-hint small { color: var(--muted); font-size: 8px; line-height: 1.4; }
+.email-reply-tools { display: flex; align-items: flex-end; gap: 10px; }
+.email-reply-tools > div { flex: 1; }
+.email-reply-tools select { width: 100%; min-height: 38px; padding: 9px 11px; color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 8px; font-size: 10px; }
+.email-review-hint { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
 
 .competency-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .competency-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; color: #5a64ce; background: #eeefff; border-radius: 4px; font-size: 8px; font-family: 'DM Mono', monospace; font-weight: 600; }
@@ -1078,6 +1125,13 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
 .practice-story-insert button:focus-visible, .interview-check-item input:focus-visible { outline: 2px solid #6168d3; outline-offset: 2px; }
 
 @media (max-width: 640px) {
+  .email-card-list { grid-template-columns: minmax(0, 1fr); }
+  .email-desk-toolbar { align-items: stretch; flex-direction: column; }
+  .email-desk-toolbar .evidence-search { max-width: none; }
+  .email-keyword-hint { align-items: flex-start; }
+  .email-reply-tools { align-items: stretch; flex-direction: column; }
+  .email-reply-tools .button { justify-content: center; }
+  .email-card-actions .button { flex: 1; justify-content: center; }
   .scholarship-checklist-title { align-items: flex-start; flex-direction: column; }
   .scholarship-checklist-title > div:last-child { justify-content: flex-start; }
   .scholarship-check-row .scholarship-check-fields, .scholarship-document-row { grid-template-columns: minmax(0, 1fr); }
