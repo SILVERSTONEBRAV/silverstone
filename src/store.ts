@@ -1,4 +1,4 @@
-import type { AgentTask, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession } from './types';
+import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession } from './types';
 
 const DATABASE_NAME = 'silverstone-local';
 const DATABASE_VERSION = 1;
@@ -59,7 +59,7 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 9,
+    version: 10,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
@@ -81,7 +81,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 9,
+      version: 10,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
@@ -96,7 +96,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     };
   }
   const version = candidate.version;
-  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9].includes(version) || !Array.isArray(candidate.studySessions)) return null;
+  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9, 10].includes(version) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -109,8 +109,14 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!validGoal || !candidate.studySessions.every(isStudySession)) return null;
   const projects = version === 2 ? [] : candidate.portfolioProjects;
   if (!Array.isArray(projects) || !projects.every(isPortfolioProject)) return null;
-  const careerOpportunities = version === 2 || version === 3 ? [] : candidate.careerOpportunities;
-  if (!Array.isArray(careerOpportunities) || !careerOpportunities.every(isCareerOpportunity)) return null;
+  const rawCareerOpportunities = version === 2 || version === 3 ? [] : candidate.careerOpportunities;
+  if (!Array.isArray(rawCareerOpportunities)) return null;
+  const careerOpportunities = version < 10
+    ? rawCareerOpportunities.map((item) => item && typeof item === 'object' && !Array.isArray(item)
+      ? { ...item, eligibilityItems: Array.isArray((item as Partial<CareerOpportunity>).eligibilityItems) ? (item as Partial<CareerOpportunity>).eligibilityItems : [], documents: Array.isArray((item as Partial<CareerOpportunity>).documents) ? (item as Partial<CareerOpportunity>).documents : [] }
+      : item)
+    : rawCareerOpportunities;
+  if (!careerOpportunities.every(isCareerOpportunity)) return null;
   const socialPosts = version >= 5 ? candidate.socialPosts : [];
   if (!Array.isArray(socialPosts) || !socialPosts.every(isSocialPostDraft)) return null;
   const studyCards = version >= 6 ? candidate.studyCards : [];
@@ -119,7 +125,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!Array.isArray(interviewPreps) || !interviewPreps.every(isInterviewPrep)) return null;
   const starStories = version >= 8 ? candidate.starStories : [];
   if (!Array.isArray(starStories) || !starStories.every(isStarStory)) return null;
-  const careerEvidence = version === 9 ? candidate.careerEvidence : [];
+  const careerEvidence = version >= 9 ? candidate.careerEvidence : [];
   if (!Array.isArray(careerEvidence) || !careerEvidence.every(isCareerEvidence)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
@@ -131,7 +137,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 9,
+    version: 10,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
@@ -206,13 +212,36 @@ function isCareerOpportunity(value: unknown): value is CareerOpportunity {
   const validDeadline = opportunity.deadline === '' || (typeof opportunity.deadline === 'string' && isDateOnly(opportunity.deadline));
   const validUrl = typeof opportunity.sourceUrl === 'string' && opportunity.sourceUrl.length <= 2048
     && (!opportunity.sourceUrl || (() => { try { return ['http:', 'https:'].includes(new URL(opportunity.sourceUrl).protocol); } catch { return false; } })());
+  const validEligibility = Array.isArray(opportunity.eligibilityItems) && opportunity.eligibilityItems.length <= 100 && opportunity.eligibilityItems.every(isEligibilityCheck);
+  const validDocuments = Array.isArray(opportunity.documents) && opportunity.documents.length <= 100 && opportunity.documents.every(isApplicationDocument);
   return typeof opportunity.id === 'string' && ['Job', 'Scholarship'].includes(opportunity.kind ?? '')
     && typeof opportunity.title === 'string' && opportunity.title.trim().length > 0 && opportunity.title.length <= 160
     && typeof opportunity.organization === 'string' && opportunity.organization.trim().length > 0 && opportunity.organization.length <= 120
     && validUrl && validDeadline && stages.includes(opportunity.stage as OpportunityStage)
     && typeof opportunity.fitNotes === 'string' && opportunity.fitNotes.length <= 5000
+    && validEligibility && validDocuments
     && typeof opportunity.createdAt === 'string' && Number.isFinite(Date.parse(opportunity.createdAt))
     && typeof opportunity.updatedAt === 'string' && Number.isFinite(Date.parse(opportunity.updatedAt));
+}
+
+function isEligibilityCheck(value: unknown): value is EligibilityCheck {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<EligibilityCheck>;
+  const statuses: EligibilityStatus[] = ['To check', 'Meets', 'Does not meet'];
+  const validUrl = typeof item.sourceUrl === 'string' && item.sourceUrl.length <= 2048
+    && (!item.sourceUrl || (() => { try { return ['http:', 'https:'].includes(new URL(item.sourceUrl).protocol); } catch { return false; } })());
+  return typeof item.id === 'string' && typeof item.requirement === 'string' && item.requirement.trim().length > 0 && item.requirement.length <= 200
+    && statuses.includes(item.status as EligibilityStatus)
+    && typeof item.notes === 'string' && item.notes.length <= 2000 && validUrl;
+}
+
+function isApplicationDocument(value: unknown): value is ApplicationDocument {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<ApplicationDocument>;
+  const statuses: ApplicationDocumentStatus[] = ['Not started', 'In progress', 'Ready', 'Submitted'];
+  return typeof item.id === 'string' && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 200
+    && statuses.includes(item.status as ApplicationDocumentStatus)
+    && typeof item.notes === 'string' && item.notes.length <= 2000;
 }
 
 function isDateOnly(value: string): boolean {

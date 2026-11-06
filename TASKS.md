@@ -105,11 +105,11 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 
 ## Phase 5 — Career, scholarships, and email
 
-- [~] **CAREER-001 · P1** Build verified fact/evidence library for education, experience, skills, and achievements. Local typed records, source labels/links, user-confirmed verification stamps, editing, deletion, search, filters, and version-9 workspace migration are implemented; attachments, claim-level reuse in CV/portfolio drafts, and generated-claim checks remain.
-- [~] **CAREER-002 · P1** Build opportunity intake, source link, fit notes, eligibility fields, and deadline tracker. Local job/scholarship intake stores source, fit notes, deadline, and stage; structured eligibility fields remain.
+- [~] **CAREER-001 · P1** Build verified fact/evidence library for education, experience, skills, and achievements. Local typed records, source labels/links, user-confirmed verification stamps, editing, deletion, search, filters, and version-10 workspace migration are implemented; attachments, claim-level reuse in CV/portfolio drafts, and generated-claim checks remain.
+- [~] **CAREER-002 · P1** Build opportunity intake, source link, fit notes, eligibility fields, and deadline tracker. Local job/scholarship intake stores source, fit notes, deadline, and stage; scholarship opportunities now support source-linked eligibility checks and per-document status. A reusable personal eligibility profile and automated criteria extraction remain.
 - [~] **CAREER-003 · P1** Build application pipeline and next-action views. Local stage tracking, sorted deadlines, and pipeline counters exist; next-action plans and reminders remain.
 - [~] **CAREER-004 · P1** Generate CV, cover letter, essay, and interview-prep drafts with evidence references and unsupported-claim warnings. Manual interview prep, dedicated format-aware Learn and mock Q&A modes, autosaved answers, browser dictation, a transparent local assessment rubric, STAR story bank, prep checklist, reverse-interview questions, thank-you draft, and Study recall handoff are implemented; evidence-linked CV/cover-letter generation and model-backed feedback remain.
-- [ ] **CAREER-005 · P1** Build scholarship eligibility checklist and document checklist.
+- [~] **CAREER-005 · P1** Build scholarship eligibility checklist and document checklist. Editable per-scholarship criteria have To check/Meets/Does not meet states, notes, and source links; document rows have Not started/In progress/Ready/Submitted states. Suggested prompts are explicitly examples to check against the official award page; file attachments and automatic official-requirement extraction remain.
 - [ ] **CAREER-006 · P1** Add email triage and reply drafts; keep sending behind explicit approval.
 - [ ] **CAREER-007 · P1** Build deadlines/pipeline dashboard and reminder preferences.
 

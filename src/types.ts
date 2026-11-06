@@ -83,6 +83,23 @@ export interface PortfolioProject {
 
 export type OpportunityKind = 'Job' | 'Scholarship';
 export type OpportunityStage = 'Saved' | 'Researching' | 'Drafting' | 'Ready to submit' | 'Submitted' | 'Interview' | 'Offer' | 'Closed';
+export type EligibilityStatus = 'To check' | 'Meets' | 'Does not meet';
+export type ApplicationDocumentStatus = 'Not started' | 'In progress' | 'Ready' | 'Submitted';
+
+export interface EligibilityCheck {
+  id: string;
+  requirement: string;
+  status: EligibilityStatus;
+  notes: string;
+  sourceUrl: string;
+}
+
+export interface ApplicationDocument {
+  id: string;
+  name: string;
+  status: ApplicationDocumentStatus;
+  notes: string;
+}
 
 export interface CareerOpportunity {
   id: string;
@@ -93,6 +110,8 @@ export interface CareerOpportunity {
   deadline: string;
   stage: OpportunityStage;
   fitNotes: string;
+  eligibilityItems: EligibilityCheck[];
+  documents: ApplicationDocument[];
   createdAt: string;
   updatedAt: string;
 }
@@ -191,7 +210,7 @@ export interface CareerEvidence {
 }
 
 export interface LocalAppState {
-  version: 9;
+  version: 10;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;

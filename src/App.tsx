@@ -3,7 +3,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
-import type { AgentTask, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 import { DEFAULT_QUESTIONS_BY_FORMAT, DEFAULT_QUESTIONS_TO_ASK, INTERVIEW_FORMATS, analyzeFillerWords, assessInterviewAnswer, calculateReadiness } from './interview';
 
@@ -12,6 +12,8 @@ type Theme = 'light' | 'dark';
 const supabaseConfigured = Boolean(import.meta.env.VITE_SUPABASE_URL?.trim() && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim());
 const opportunityStages: OpportunityStage[] = ['Saved', 'Researching', 'Drafting', 'Ready to submit', 'Submitted', 'Interview', 'Offer', 'Closed'];
 const socialChannels: SocialChannel[] = ['Facebook', 'Instagram', 'X'];
+const scholarshipEligibilitySuggestions = ['Citizenship or residency requirement', 'Study level and program requirement', 'Field of study requirement', 'Academic standing or GPA requirement', 'Funding, duration, and renewal terms'];
+const scholarshipDocumentSuggestions = ['Academic transcript', 'Proof of enrollment or admission', 'CV or résumé', 'Personal statement or essay', 'Recommendation letters', 'Identity or eligibility documents'];
 
 const navigation: { label: string; items: { key: PageKey; label: string; icon: IconName }[] }[] = [
   {
@@ -291,7 +293,7 @@ function App() {
     setToast('Portfolio draft saved locally');
   }
 
-  function saveCareerOpportunity(draft: { id?: string; kind: CareerOpportunity['kind']; title: string; organization: string; sourceUrl: string; deadline: string; stage: OpportunityStage; fitNotes: string }) {
+  function saveCareerOpportunity(draft: Omit<CareerOpportunity, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) {
     const updatedAt = new Date().toISOString();
     setAppState((current) => {
       const existing = current.careerOpportunities.find((opportunity) => opportunity.id === draft.id);
@@ -503,7 +505,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 9, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [] });
+      setAppState({ version: 10, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -1169,6 +1171,10 @@ function CareerModule({
               {sortedOpportunities.length ? (
                 sortedOpportunities.map((item) => {
                   const linkedPrep = interviewPreps.find((prep) => prep.opportunityId === item.id);
+                  const verifiedEligibility = item.eligibilityItems.filter((entry) => entry.status === 'Meets' || entry.status === 'Does not meet').length;
+                  const readyDocuments = item.documents.filter((entry) => entry.status === 'Ready' || entry.status === 'Submitted').length;
+                  const eligibilitySummary = item.eligibilityItems.length ? `${verifiedEligibility}/${item.eligibilityItems.length} checked` : 'not started';
+                  const documentSummary = item.documents.length ? `${readyDocuments}/${item.documents.length} ready` : 'not started';
                   return (
                     <div className="opportunity-row" key={item.id}>
                       <span className={`opportunity-badge badge-${item.kind === 'Scholarship' ? 'violet' : 'blue'}`}>
@@ -1177,6 +1183,7 @@ function CareerModule({
                       <span className="opportunity-copy">
                         <strong>{item.title}</strong>
                         <small>{item.kind} · {item.organization}</small>
+                        {item.kind === 'Scholarship' && <small className="scholarship-progress">Eligibility {eligibilitySummary} · Documents {documentSummary}</small>}
                       </span>
                       <span className="stage-pill">{item.stage}</span>
                       <span className="opportunity-due">
@@ -1491,7 +1498,7 @@ function StarStoryDialog({ current, onSave, onClose }: {
   );
 }
 
-function CareerOpportunityDialog({ current, onSave, onClose }: { current: CareerOpportunity | null; onSave: (draft: { id?: string; kind: CareerOpportunity['kind']; title: string; organization: string; sourceUrl: string; deadline: string; stage: OpportunityStage; fitNotes: string }) => void; onClose: () => void }) {
+function CareerOpportunityDialog({ current, onSave, onClose }: { current: CareerOpportunity | null; onSave: (draft: Omit<CareerOpportunity, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void; onClose: () => void }) {
   const [kind, setKind] = useState<CareerOpportunity['kind']>(current?.kind ?? 'Job');
   const [title, setTitle] = useState(current?.title ?? '');
   const [organization, setOrganization] = useState(current?.organization ?? '');
@@ -1499,11 +1506,31 @@ function CareerOpportunityDialog({ current, onSave, onClose }: { current: Career
   const [deadline, setDeadline] = useState(current?.deadline ?? '');
   const [stage, setStage] = useState<OpportunityStage>(current?.stage ?? 'Saved');
   const [fitNotes, setFitNotes] = useState(current?.fitNotes ?? '');
+  const [eligibilityItems, setEligibilityItems] = useState<EligibilityCheck[]>(current?.eligibilityItems ?? []);
+  const [documents, setDocuments] = useState<ApplicationDocument[]>(current?.documents ?? []);
+
+  function addEligibility(requirement = '') {
+    setEligibilityItems((items) => [...items, { id: createId('eligibility'), requirement, status: 'To check', notes: '', sourceUrl }]);
+  }
+
+  function addDocument(name = '') {
+    setDocuments((items) => [...items, { id: createId('application-document'), name, status: 'Not started', notes: '' }]);
+  }
+
+  function addSuggestedEligibility() {
+    const existing = new Set(eligibilityItems.map((item) => item.requirement.toLowerCase()));
+    setEligibilityItems((items) => [...items, ...scholarshipEligibilitySuggestions.filter((item) => !existing.has(item.toLowerCase())).map((requirement) => ({ id: createId('eligibility'), requirement, status: 'To check' as const, notes: '', sourceUrl }))]);
+  }
+
+  function addSuggestedDocuments() {
+    const existing = new Set(documents.map((item) => item.name.toLowerCase()));
+    setDocuments((items) => [...items, ...scholarshipDocumentSuggestions.filter((item) => !existing.has(item.toLowerCase())).map((name) => ({ id: createId('application-document'), name, status: 'Not started' as const, notes: '' }))]);
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!title.trim() || !organization.trim()) return;
-    onSave({ id: current?.id, kind, title: title.trim(), organization: organization.trim(), sourceUrl: sourceUrl.trim(), deadline, stage, fitNotes: fitNotes.trim() });
+    onSave({ id: current?.id, kind, title: title.trim(), organization: organization.trim(), sourceUrl: sourceUrl.trim(), deadline, stage, fitNotes: fitNotes.trim(), eligibilityItems: eligibilityItems.map((item) => ({ ...item, requirement: item.requirement.trim(), notes: item.notes.trim(), sourceUrl: item.sourceUrl.trim() })).filter((item) => item.requirement), documents: documents.map((item) => ({ ...item, name: item.name.trim(), notes: item.notes.trim() })).filter((item) => item.name) });
   }
 
   return (
@@ -1523,6 +1550,32 @@ function CareerOpportunityDialog({ current, onSave, onClose }: { current: Career
             <div><label className="field-label" htmlFor="opportunity-deadline">Deadline</label><input id="opportunity-deadline" type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></div>
           </div>
           <label className="field-label" htmlFor="opportunity-fit">Fit notes and questions to verify</label><textarea id="opportunity-fit" rows={4} maxLength={5000} value={fitNotes} onChange={(event) => setFitNotes(event.target.value)} placeholder="Why does this fit? Which eligibility details or requirements should you check?" />
+          {kind === 'Scholarship' && <div className="scholarship-checklists">
+            <div className="scholarship-checklist-head"><span className="panel-eyebrow">SCHOLARSHIP READINESS</span><p>Only mark a criterion after checking the official award information. Suggested prompts are examples, not confirmed requirements.</p></div>
+            <section className="scholarship-checklist-section">
+              <div className="scholarship-checklist-title"><div><strong>Eligibility checks</strong><small>{eligibilityItems.filter((item) => item.status !== 'To check').length} of {eligibilityItems.length} reviewed</small></div><div><button type="button" className="text-action" onClick={addSuggestedEligibility}>Add common prompts</button><button type="button" className="text-action" onClick={() => addEligibility()}>Add check</button></div></div>
+              {eligibilityItems.length ? <div className="scholarship-checklist-list">{eligibilityItems.map((item) => <article className="scholarship-check-row" key={item.id}>
+                <div className="scholarship-check-fields">
+                  <div><label className="field-label" htmlFor={`eligibility-requirement-${item.id}`}>Requirement</label><input id={`eligibility-requirement-${item.id}`} maxLength={200} value={item.requirement} onChange={(event) => setEligibilityItems((items) => items.map((entry) => entry.id === item.id ? { ...entry, requirement: event.target.value } : entry))} placeholder="Copy the eligibility condition from the official source" /></div>
+                  <div><label className="field-label" htmlFor={`eligibility-status-${item.id}`}>Your status</label><select id={`eligibility-status-${item.id}`} value={item.status} onChange={(event) => setEligibilityItems((items) => items.map((entry) => entry.id === item.id ? { ...entry, status: event.target.value as EligibilityStatus } : entry))}>{(['To check', 'Meets', 'Does not meet'] as EligibilityStatus[]).map((status) => <option key={status}>{status}</option>)}</select></div>
+                </div>
+                <div className="scholarship-check-fields">
+                  <div><label className="field-label" htmlFor={`eligibility-notes-${item.id}`}>Notes or evidence</label><input id={`eligibility-notes-${item.id}`} maxLength={2000} value={item.notes} onChange={(event) => setEligibilityItems((items) => items.map((entry) => entry.id === item.id ? { ...entry, notes: event.target.value } : entry))} placeholder="What did you check? Any details to confirm?" /></div>
+                  <div><label className="field-label" htmlFor={`eligibility-source-${item.id}`}>Source link</label><input id={`eligibility-source-${item.id}`} type="url" maxLength={2048} value={item.sourceUrl} onChange={(event) => setEligibilityItems((items) => items.map((entry) => entry.id === item.id ? { ...entry, sourceUrl: event.target.value } : entry))} placeholder="https://…" /></div>
+                </div>
+                <button type="button" className="text-action checklist-remove" onClick={() => setEligibilityItems((items) => items.filter((entry) => entry.id !== item.id))}>Remove check</button>
+              </article>)}</div> : <p className="scholarship-check-empty">No eligibility checks yet. Add criteria from the official scholarship page or use common prompts as a starting point.</p>}
+            </section>
+            <section className="scholarship-checklist-section">
+              <div className="scholarship-checklist-title"><div><strong>Required documents</strong><small>{documents.filter((item) => item.status === 'Ready' || item.status === 'Submitted').length} of {documents.length} ready or submitted</small></div><div><button type="button" className="text-action" onClick={addSuggestedDocuments}>Add document suggestions</button><button type="button" className="text-action" onClick={() => addDocument()}>Add document</button></div></div>
+              {documents.length ? <div className="scholarship-checklist-list">{documents.map((item) => <article className="scholarship-document-row" key={item.id}>
+                <div><label className="field-label" htmlFor={`application-document-name-${item.id}`}>Document</label><input id={`application-document-name-${item.id}`} maxLength={200} value={item.name} onChange={(event) => setDocuments((items) => items.map((entry) => entry.id === item.id ? { ...entry, name: event.target.value } : entry))} placeholder="Document requested by the award" /></div>
+                <div><label className="field-label" htmlFor={`application-document-status-${item.id}`}>Status</label><select id={`application-document-status-${item.id}`} value={item.status} onChange={(event) => setDocuments((items) => items.map((entry) => entry.id === item.id ? { ...entry, status: event.target.value as ApplicationDocumentStatus } : entry))}>{(['Not started', 'In progress', 'Ready', 'Submitted'] as ApplicationDocumentStatus[]).map((status) => <option key={status}>{status}</option>)}</select></div>
+                <div><label className="field-label" htmlFor={`application-document-notes-${item.id}`}>Notes</label><input id={`application-document-notes-${item.id}`} maxLength={2000} value={item.notes} onChange={(event) => setDocuments((items) => items.map((entry) => entry.id === item.id ? { ...entry, notes: event.target.value } : entry))} placeholder="Owner, format, or source" /></div>
+                <button type="button" className="text-action checklist-remove" onClick={() => setDocuments((items) => items.filter((entry) => entry.id !== item.id))}>Remove</button>
+              </article>)}</div> : <p className="scholarship-check-empty">No documents listed. Check the award page and add only the documents it requests.</p>}
+            </section>
+          </div>}
           <div className="dialog-foot"><span><Icon name="shield" size={13} /> Saved only in this browser</span><div className="career-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim() || !organization.trim()}>Save opportunity<Icon name="arrow" size={14} /></button></div></div>
         </form>
       </section>
@@ -2729,7 +2782,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, career evidence records, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, career evidence records, portfolio drafts, career opportunities and scholarship checklists, and social post drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -2743,8 +2796,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, career evidence records, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, career evidence records, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, career evidence records, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, career evidence records, portfolio drafts with saved versions, career opportunities and scholarship checklists, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <CloudWorkspacePanel workspace={state} onRestore={onRestoreCloud} />
         <section className="panel settings-panel"><PanelHeading eyebrow="APP CONNECTIONS" title="External services" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
