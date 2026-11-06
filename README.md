@@ -4,7 +4,9 @@
 
 Silverstone is a private, multimodal assistant for coordinating everyday plans, study, career opportunities, a portfolio, communications, research, and social content. It keeps useful personal context with sources, turns goals into plans, follows open tasks through to verified outcomes, and offers proactive help within user-defined limits. It is designed as a web app and installable app, with desktop and mobile packages sharing the same account, data, workflows, and approval rules.
 
-The planned assistant accepts text, voice, images, links, and files. The current preview includes typed chat plus click-to-talk browser speech input and spoken device-voice replies for a few local task, note, and focus commands. Browser speech support varies, and the browser speech service may process audio; Silverstone itself does not save a recording. Study includes manual question/answer cards with spaced review intervals. Local portfolio drafts support editing, text preview, and up to 30 earlier versions; the career tracker stores jobs and scholarships with source links, deadlines, fit notes, and stages; Creator Studio stores Facebook, Instagram, and X drafts with optional local review times. These workflows are local only and included in backup/restore; nothing is published, submitted, or scheduled with an external service. Live visual context, reliable offline data sync, AI reasoning, and connected services are not implemented yet.
+The planned assistant accepts text, voice, images, links, and files. The current preview includes typed chat plus click-to-talk browser speech input and spoken device-voice replies for a few local task, note, and focus commands. Browser speech support varies, and the browser speech service may process audio; Silverstone itself does not save a recording. Study includes manual question/answer cards with spaced review intervals. Local portfolio drafts support editing, text preview, and up to 30 earlier versions; the career tracker stores jobs and scholarships with source links, deadlines, fit notes, and stages; Creator Studio stores Facebook, Instagram, and X drafts with optional local review times. Supabase support provides email-link sign-in, optional passkeys, and explicit per-account cloud copy/restore after credentials and the SQL migration are configured. These workflows do not publish, submit, or schedule content through external services. Live visual context, automatic cloud sync, AI reasoning, and most account integrations are not implemented yet.
+
+See [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for the Supabase SQL migration, Vercel environment variables, email redirect, and passkey setup steps.
 
 ## Product principles
 
@@ -53,8 +55,9 @@ Live camera processing has a separate session control from general Observation M
 - **Frontend:** React, TypeScript, and Vite as a responsive single-page application.
 - **Web:** Progressive web app with cached application assets and IndexedDB for offline data.
 - **Desktop and mobile:** Tauri 2 packages the shared interface; validate native capabilities on target operating systems before committing to this route.
-- **Backend:** Rust with Axum and Tokio.
-- **Server data:** PostgreSQL with SQLx; private object storage for uploads and generated documents.
+- **Hosted identity and first cloud copy:** Supabase Auth and PostgreSQL with per-user RLS; the browser uses a publishable key and revision-checked manual workspace writes.
+- **Backend:** Rust with Axum and Tokio for trusted policy, durable workflows, jobs, and integrations as those services are implemented.
+- **Server data:** PostgreSQL with SQLx for the Rust service; private object storage for uploads and generated documents.
 - **Device data:** SQLite for Tauri applications; IndexedDB for the browser PWA.
 - **AI:** provider adapter for text, structured output, image understanding, transcription, and optional realtime voice. Keep policy and workflow state in application code.
 - **Scheduling:** Rust worker with durable jobs stored in PostgreSQL. Social publishing runs from the server after an approved post is confirmed there.

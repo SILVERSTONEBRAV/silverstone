@@ -15,6 +15,7 @@
 - Local career tracker for jobs and scholarships with source URL, deadline, fit notes, editable application stage, and pipeline counts; records are included in workspace backup/restore and are not submitted externally.
 - Local Creator Studio drafts for Facebook, Instagram, and X with channel selection, text preview, optional local review time, timezone metadata, and chronological planning list; nothing is sent, externally scheduled, or published.
 - Local portfolio project drafts with a title, summary, case-study notes, plain-text Markdown preview, and up to 30 prior versions; users can restore an earlier version into the editor before saving. Drafts are local and are not published.
+- Optional Supabase Auth email-link sign-in and experimental passkey sign-in, plus explicit per-user workspace upload/restore using RLS and revision-checked writes. Credentials and SQL migration still need project/Vercel setup; automatic sync is not implemented.
 - User-triggered JSON workspace backup and schema-validated restore for tasks, notes, study goals/sessions/cards, portfolio drafts/version history, career opportunities, and social drafts; the export is intentionally unencrypted and restore replaces the current local workspace after confirmation.
 - PWA manifest, production service worker with install-time build-asset precaching, cache-first assets, and online/offline status indicator. The app shell and local records can work offline after a successful first install; cross-device sync and conflict recovery are not implemented.
 - Demo dashboard values are illustrative. No email, calendar, social, messaging, finance, camera, or AI integrations are connected. Voice uses browser speech APIs only; there is no connected AI voice service or saved audio recording.
@@ -59,15 +60,15 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 - [ ] **PLAT-004 · P0** Verify camera/image selection, microphone, notifications, file sharing, secure storage, and platform permission flows.
 - [~] **PLAT-005 · P0** Add PWA installability, app-shell caching, and offline indicator. Manifest, install-time build-asset precaching, and online/offline status exist; installability and real-device offline behavior need validation.
 - [~] **PLAT-006 · P0** Implement browser IndexedDB local store and Tauri SQLite adapter behind a shared repository interface. Browser workspace storage and legacy localStorage migration/fallback exist; Tauri adapter and shared interface remain.
-- [ ] **PLAT-007 · P0** Prototype sync outbox, conflict detection, retries, and stale-action invalidation.
+- [~] **PLAT-007 · P0** Prototype sync outbox, conflict detection, retries, and stale-action invalidation. Manual cloud copies use revision-checked writes to catch stale uploads; offline outbox, background sync, merges, and retries remain.
 - [ ] **PLAT-008 · P0** Record Tauri feature gaps and decide whether mobile remains Tauri or receives a dedicated native shell.
 - [ ] **PLAT-009 · P0** Prototype per-OS permission and background limits for notification metadata, app activity, local file watching, location, health, and sensor capture; document gaps and platform-specific behavior.
 
 ## Phase 2 — Rust service foundation
 
 - [~] **CORE-001 · P0** Create Rust workspace, Axum/Tokio API, configuration, structured errors, and health endpoints. Workspace and loopback health route are scaffolded; structured errors and compilation remain.
-- [ ] **CORE-002 · P0** Design PostgreSQL schema and SQLx migration process for accounts, tasks, captures, workflows, approvals, and audit events.
-- [ ] **CORE-003 · P0** Implement authentication, sessions, account deletion/export, and server-side secret handling.
+- [~] **CORE-002 · P0** Design PostgreSQL schema and SQLx migration process for accounts, tasks, captures, workflows, approvals, and audit events. A Supabase JSONB workspace table, owner-only RLS, and revision-checked save function are provided; relational service schema and SQLx migrations remain.
+- [~] **CORE-003 · P0** Implement authentication, sessions, account deletion/export, and server-side secret handling. Supabase email-link sessions and experimental passkeys are scaffolded; account lifecycle, server-side secrets, and configured credentials remain.
 - [ ] **CORE-004 · P0** Implement object storage upload/download with scoped, short-lived access.
 - [ ] **CORE-005 · P0** Implement device registration, sync cursor, version fields, idempotency keys, and sync outbox endpoints.
 - [ ] **CORE-006 · P0** Implement durable PostgreSQL-backed worker, job leases, retry/backoff, cancellation, and execution history.

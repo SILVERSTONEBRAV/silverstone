@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Scope:** Product, interface, architecture, offline behavior, integrations, and release plan
-**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, career opportunity tracking, social post drafts with local review times, manual active-recall cards with local review intervals, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history. Workspace backup/restore includes these local records. The minimal Rust health API is scaffolded; desktop/mobile packaging, sync, AI, and integrations remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
+**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, career opportunity tracking, social post drafts with local review times, manual active-recall cards with local review intervals, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history. Optional Supabase email-link auth, passkey sign-in, and revision-checked manual workspace copy/restore are implemented; credentials and the SQL migration still need to be configured for deployment. Workspace backup/restore includes local records. The minimal Rust health API is scaffolded; desktop/mobile packaging, automatic sync, AI, and external integrations remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
 
 ## 1. Product vision
 
@@ -297,6 +297,7 @@ An offline post can remain a local draft or proposed schedule. It is not a confi
 
 ### Services
 
+- Hosted web workspace: Supabase Auth and Postgres provide email-link sign-in, optional passkeys, and a user-owned JSONB workspace row with RLS. Browser cloud writes are explicit and revision-checked; the publishable key is the only Supabase key exposed to the client.
 - Rust API: Axum + Tokio, authentication, validation, business rules, policy gate, sync endpoints, and integration callbacks.
 - Database access: PostgreSQL + SQLx migrations and typed query practices.
 - Worker: scheduled and retryable jobs stored in PostgreSQL; lease jobs safely and record every attempt.

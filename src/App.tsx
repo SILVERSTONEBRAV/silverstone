@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
+import type { CloudWorkspaceSnapshot } from './cloud';
 import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 
 type ModalMode = 'task' | 'capture' | null;
 type Theme = 'light' | 'dark';
+const supabaseConfigured = Boolean(import.meta.env.VITE_SUPABASE_URL?.trim() && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim());
 const opportunityStages: OpportunityStage[] = ['Saved', 'Researching', 'Drafting', 'Ready to submit', 'Submitted', 'Interview', 'Offer', 'Closed'];
 const socialChannels: SocialChannel[] = ['Facebook', 'Instagram', 'X'];
 
@@ -298,6 +301,12 @@ function App() {
     setToast('Backup restored on this device');
   }
 
+  async function restoreCloudWorkspace(workspace: LocalAppState) {
+    await saveLocalState(workspace);
+    setAppState(workspace);
+    setToast('Cloud copy restored to this device');
+  }
+
   function completeFocusSession() {
     if (!focusDetails.studyGoalId) return;
     const session: StudySession = {
@@ -408,7 +417,7 @@ function App() {
               onToast={setToast}
             />
           ) : activePage === 'settings' ? (
-            <SettingsPage state={appState} theme={theme} onThemeChange={setTheme} onImport={restoreWorkspace} onReset={resetWorkspace} onToast={setToast} />
+            <SettingsPage state={appState} theme={theme} onThemeChange={setTheme} onImport={restoreWorkspace} onRestoreCloud={restoreCloudWorkspace} onReset={resetWorkspace} onToast={setToast} />
           ) : (
             <ModulePage
               page={activePage}
@@ -433,7 +442,7 @@ function App() {
         </main>
         <footer className="app-footer">
           <span>Silverstone is running locally in this browser.</span>
-          <span><Icon name="shield" size={13} /> No connected accounts</span>
+          <span><Icon name="shield" size={13} /> No external service accounts</span>
         </footer>
       </div>
       <button className="mobile-fab" onClick={() => setModalMode('task')}><Icon name="plus" size={17} /> New task</button>
@@ -1062,11 +1071,215 @@ function ActivityModule({ state }: { state: LocalAppState }) {
   );
 }
 
-function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast }: {
+function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppState; onRestore: (workspace: LocalAppState) => Promise<void> }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [cloudClient, setCloudClient] = useState<SupabaseClient | null>(null);
+  const [cloudApi, setCloudApi] = useState<typeof import('./cloud') | null>(null);
+  const [email, setEmail] = useState('');
+  const [snapshot, setSnapshot] = useState<CloudWorkspaceSnapshot | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (supabaseConfigured) {
+      void Promise.all([import('./supabase'), import('./cloud')]).then(([clientModule, api]) => {
+        if (!active) return;
+        setCloudClient(clientModule.supabase);
+        setCloudApi(api);
+      }).catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Could not load Supabase support.');
+      });
+    }
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const client = cloudClient;
+    const api = cloudApi;
+    if (!client || !api) return undefined;
+    let active = true;
+    const fetchSnapshot = () => {
+      void api.loadCloudWorkspace().then((nextSnapshot) => {
+        if (active) setSnapshot(nextSnapshot);
+      }).catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Could not read the cloud workspace.');
+      });
+    };
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      const nextUser = session?.user ?? null;
+      setUser(nextUser);
+      if (nextUser) window.setTimeout(fetchSnapshot, 0);
+      else setSnapshot(undefined);
+    });
+    void client.auth.getSession().then(({ data, error: sessionError }) => {
+      if (!active) return;
+      if (sessionError) setError(sessionError.message);
+      const currentUser = data.session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) fetchSnapshot();
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [cloudClient, cloudApi]);
+
+  async function sendSignInLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const client = cloudClient;
+    if (!client) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const { error: signInError } = await client.auth.signInWithOtp({
+        email: email.trim(),
+        options: { emailRedirectTo: window.location.origin, shouldCreateUser: false },
+      });
+      if (signInError) throw signInError;
+      setMessage('Check your email for a sign-in link. It will return you to this site.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not send a sign-in link.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signInWithPasskey() {
+    const client = cloudClient;
+    if (!client) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const { error: passkeyError } = await client.auth.signInWithPasskey();
+      if (passkeyError) throw passkeyError;
+      setMessage('Signed in with your passkey.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Passkey sign-in was not completed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function registerPasskey() {
+    const client = cloudClient;
+    if (!client) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const { error: registerError } = await client.auth.registerPasskey();
+      if (registerError) throw registerError;
+      setMessage('Passkey registered for this account on this device.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not register this passkey.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshCloud() {
+    if (!cloudApi) return;
+    setBusy(true);
+    setError('');
+    try {
+      setSnapshot(await cloudApi.loadCloudWorkspace());
+      setMessage('Cloud workspace refreshed.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not refresh the cloud workspace.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadLocalWorkspace() {
+    if (!snapshot || !cloudApi) return;
+    const replaces = snapshot.workspace !== null;
+    const prompt = replaces
+      ? 'Replace the cloud copy with the workspace currently on this device? The other copy will be overwritten.'
+      : 'Create your first cloud copy from the workspace on this device? Only this signed-in account can read it.';
+    if (!window.confirm(prompt)) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await cloudApi.saveCloudWorkspace(workspace, snapshot.revision);
+      setSnapshot(await cloudApi.loadCloudWorkspace());
+      setMessage('This device’s workspace is now saved in your private cloud row.');
+    } catch (reason) {
+      const detail = reason instanceof Error ? reason.message : 'Could not save to Supabase.';
+      setError(detail);
+      if (detail.includes('changed since it was loaded')) {
+        try { setSnapshot(await cloudApi.loadCloudWorkspace()); } catch { /* Keep the conflict message visible. */ }
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restoreCloudCopy() {
+    if (!snapshot?.workspace) return;
+    if (!window.confirm('Replace the workspace on this device with the Supabase cloud copy? Download a local backup first if you need to preserve both versions.')) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onRestore(snapshot.workspace);
+      setMessage('Cloud copy restored to this device.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not restore the cloud copy.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    const client = cloudClient;
+    if (!client) return;
+    setBusy(true);
+    setError('');
+    try {
+      const { error: signOutError } = await client.auth.signOut();
+      if (signOutError) throw signOutError;
+      setSnapshot(undefined);
+      setMessage('Signed out. This device’s local workspace remains available.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not sign out.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel settings-panel cloud-panel">
+      <PanelHeading eyebrow="SUPABASE CLOUD COPY" title="Keep this workspace available online" />
+      {!supabaseConfigured ? <div className="cloud-not-configured"><span className="connection-lock"><Icon name="cloud" size={18} /></span><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to your local environment and Vercel project settings, then redeploy.</p></div> : user ? <>
+        <div className="cloud-user-row"><span><strong>{user.email ?? 'Signed-in account'}</strong><small>Signed in · local edits stay local until you choose to upload</small></span><button className="text-action" onClick={signOut} disabled={busy}>Sign out</button></div>
+        <div className="cloud-info-card"><span className="local-data-icon"><Icon name="shield" size={16} /></span><span><strong>Private, manual sync</strong><small>Only this account can access its row. Upload and restore are explicit actions; local edits do not sync automatically.</small></span></div>
+        {snapshot === undefined ? <p className="cloud-state-copy">Checking your Supabase workspace…</p> : <div className="cloud-snapshot-row"><span><strong>{snapshot.workspace ? 'Cloud copy found' : 'No cloud copy yet'}</strong><small>{snapshot.workspace ? `Revision ${snapshot.revision} · updated ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(snapshot.updatedAt ?? ''))}` : 'Create one from this device when you are ready.'}</small></span><button className="button button-secondary" onClick={refreshCloud} disabled={busy}><Icon name="reset" size={14} /> Refresh</button></div>}
+        <div className="cloud-actions"><button className="button button-primary" onClick={uploadLocalWorkspace} disabled={busy || snapshot === undefined}><Icon name="cloud" size={15} /> {snapshot?.workspace ? 'Replace cloud copy' : 'Create cloud copy'}</button>{snapshot?.workspace && <button className="button button-secondary" onClick={restoreCloudCopy} disabled={busy}><Icon name="download" size={14} /> Restore to this device</button>}<button className="button button-secondary" onClick={registerPasskey} disabled={busy}><Icon name="shield" size={14} /> Add a passkey</button></div>
+        <p className="cloud-passkey-note">Passkeys use your device’s biometric, PIN, or security key. Supabase stores the public credential; it does not receive your fingerprint or face data.</p>
+      </> : <>
+        <div className="cloud-not-configured cloud-auth-intro"><span className="connection-lock"><Icon name="shield" size={18} /></span><p>Sign in to access your private cloud copy. First sign in with an existing account, then you can register a device passkey for future sign-ins.</p></div>
+        <button className="button button-primary cloud-passkey-signin" onClick={signInWithPasskey} disabled={busy || !cloudClient}><Icon name="shield" size={15} /> Sign in with a passkey</button>
+        <form className="cloud-email-form" onSubmit={sendSignInLink}><label className="field-label" htmlFor="cloud-signin-email">Or use your account email</label><div><input id="cloud-signin-email" type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /><button className="button button-secondary" type="submit" disabled={busy || !cloudClient || !email.trim()}>Email sign-in link</button></div></form>
+      </>}
+      {error && <p className="cloud-feedback cloud-error" role="alert">{error}</p>}
+      {message && <p className="cloud-feedback cloud-success" role="status">{message}</p>}
+      <small className="cloud-footer-note">Cloud storage is a second copy, not a replacement for local/offline storage. Only upload data you intend to keep in Supabase.</small>
+    </section>
+  );
+}
+
+function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, onReset, onToast }: {
   state: LocalAppState;
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
   onImport: (serializedBackup: string) => Promise<void>;
+  onRestoreCloud: (workspace: LocalAppState) => Promise<void>;
   onReset: () => void;
   onToast: (message: string) => void;
 }) {
@@ -1109,7 +1322,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, recall cards, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, recall cards, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="CONNECTIONS" title="No services connected" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
+        <CloudWorkspacePanel workspace={state} onRestore={onRestoreCloud} />
+        <section className="panel settings-panel"><PanelHeading eyebrow="APP CONNECTIONS" title="External services" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
     </>
   );

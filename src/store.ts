@@ -130,6 +130,12 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   };
 }
 
+export function parseWorkspaceState(value: unknown): LocalAppState {
+  const state = normalizeLocalAppState(value);
+  if (!state) throw new Error('The cloud workspace has an unsupported schema or invalid data.');
+  return state;
+}
+
 function isAgentTask(value: unknown): value is AgentTask {
   if (!value || typeof value !== 'object') return false;
   const task = value as Partial<AgentTask>;
