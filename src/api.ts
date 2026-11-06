@@ -4,10 +4,35 @@ export interface HealthResponse {
   version: string;
 }
 
+export interface ApiReadinessResponse {
+  status: 'ready' | 'degraded';
+  service: 'silverstone-api';
+  version: string;
+  features: {
+    supabase_auth: boolean;
+    openai_responses: boolean;
+  };
+}
+
+function configuredApiBase(): string {
+  return import.meta.env.VITE_SILVERSTONE_API_URL?.trim().replace(/\/+$/, '') ?? '';
+}
+
 export async function getApiHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  const response = await fetch('/api/health', { signal });
+  const base = configuredApiBase();
+  const endpoint = base ? `${base}/health` : '/api/health';
+  const response = await fetch(endpoint, { signal });
   if (!response.ok) throw new Error(`API health request failed (${response.status})`);
   return response.json() as Promise<HealthResponse>;
+}
+
+export async function getApiReadiness(signal?: AbortSignal): Promise<ApiReadinessResponse | null> {
+  const base = configuredApiBase();
+  if (import.meta.env.PROD && !base) return null;
+  const endpoint = base ? `${base}/ready` : '/api/ready';
+  const response = await fetch(endpoint, { signal });
+  if (!response.ok) throw new Error(`API readiness request failed (${response.status})`);
+  return response.json() as Promise<ApiReadinessResponse>;
 }
 
 interface AssistantApiResponse {

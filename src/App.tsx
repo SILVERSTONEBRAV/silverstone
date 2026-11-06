@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
-import { askSilverstone } from './api';
+import { askSilverstone, getApiReadiness, type ApiReadinessResponse } from './api';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
 import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerDraft, CareerDraftKind, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
@@ -2907,6 +2907,26 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [apiReadiness, setApiReadiness] = useState<ApiReadinessResponse | null | undefined>(undefined);
+  const [apiError, setApiError] = useState('');
+
+  async function inspectApi() {
+    setApiReadiness(undefined);
+    setApiError('');
+    try {
+      setApiReadiness(await getApiReadiness());
+    } catch (reason) {
+      setApiError(reason instanceof Error ? reason.message : 'The Silverstone API could not be reached.');
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getApiReadiness(controller.signal).then(setApiReadiness).catch((reason: unknown) => {
+      if (!controller.signal.aborted) setApiError(reason instanceof Error ? reason.message : 'The Silverstone API could not be reached.');
+    });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -3091,6 +3111,11 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
   return (
     <section className="panel settings-panel cloud-panel">
       <PanelHeading eyebrow="SUPABASE ONLINE WORKSPACE" title="Keep account records available online" />
+      <div className="cloud-info-card cloud-api-status">
+        <span className="local-data-icon"><Icon name="sparkle" size={16} /></span>
+        <span><strong>Silverstone AI service</strong><small>{apiError || (apiReadiness === undefined ? 'Checking the Rust API…' : apiReadiness === null ? 'Not connected. Set VITE_SILVERSTONE_API_URL in Vercel after deploying the API.' : `${apiReadiness.status === 'ready' ? 'Ready' : 'Reachable with missing configuration'} · Supabase Auth ${apiReadiness.features.supabase_auth ? 'on' : 'off'} · OpenAI ${apiReadiness.features.openai_responses ? 'on' : 'off'} · v${apiReadiness.version}`)}</small></span>
+        <button className="text-action" onClick={() => void inspectApi()} disabled={apiReadiness === undefined}>Check service</button>
+      </div>
       {!supabaseConfigured ? <div className="cloud-not-configured"><span className="connection-lock"><Icon name="cloud" size={18} /></span><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to your local environment and Vercel project settings, then redeploy.</p></div> : user ? <>
         <div className="cloud-user-row"><span><strong>{user.email ?? 'Signed-in account'}</strong><small>Signed in · device-only drafts are kept separate</small></span><button className="text-action" onClick={signOut} disabled={busy}>Sign out</button></div>
         <div className="cloud-info-card"><span className="local-data-icon"><Icon name="shield" size={16} /></span><span><strong>Private per-record cloud data</strong><small>Sync is currently user-triggered and replaces the account’s online record set atomically. Drafts stay on this device; automatic background sync and cross-device conflict resolution are still to come.</small></span></div>

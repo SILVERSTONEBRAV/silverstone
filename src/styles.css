@@ -451,6 +451,8 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
 .cloud-user-row small, .cloud-snapshot-row small, .cloud-info-card small { color: var(--muted); font-size: 8px; line-height: 1.5; }
 .cloud-info-card { margin: 10px 0; }
 .cloud-info-card > span:last-child { display: flex; flex-direction: column; gap: 4px; }
+.cloud-api-status { align-items: center; margin: 0 0 12px; }
+.cloud-api-status .text-action { flex: 0 0 auto; }
 .cloud-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .cloud-actions .button { min-height: 34px; font-size: 9px; }
 .cloud-email-form { margin-top: 11px; }
