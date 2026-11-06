@@ -11,6 +11,7 @@
 - React + TypeScript + Vite browser shell with responsive workspace navigation and dashboard pages.
 - Minimal Axum loopback health endpoint and TypeScript health response/client contract are scaffolded; Rust compilation remains pending because Cargo is unavailable.
 - IndexedDB-backed local tasks, notes, a weekly study goal, available-time preference, and completed focus-session log; migration from older Silverstone/Orbit localStorage keys; metadata, search, task completion, and theme preference. localStorage remains a fallback; browser data is not encrypted.
+- Local career tracker for jobs and scholarships with source URL, deadline, fit notes, editable application stage, and pipeline counts; records are included in workspace backup/restore and are not submitted externally.
 - Local portfolio project drafts with a title, summary, case-study notes, plain-text Markdown preview, and up to 30 prior versions; users can restore an earlier version into the editor before saving. Drafts are local and are not published.
 - User-triggered JSON workspace backup and schema-validated restore for tasks, notes, study data, and portfolio drafts/version history; the export is intentionally unencrypted and restore replaces the current local workspace after confirmation.
 - PWA manifest, production service worker with install-time build-asset precaching, cache-first assets, and online/offline status indicator. The app shell and local records can work offline after a successful first install; cross-device sync and conflict recovery are not implemented.
@@ -26,7 +27,7 @@ The interface is a working prototype, not yet a connected personal agent. The ne
 2. **Make local data dependable.** The browser now uses IndexedDB with localStorage migration/fallback and validated workspace backup/restore. Add a Tauri SQLite adapter, an encryption strategy, per-record deletion, sync outbox, and offline conflict recovery. Validate PWA install and offline behavior on real devices.
 3. **Compile and extend the Rust service.** Install/validate the Rust toolchain, compile the health service, then add authentication, durable records, sync, jobs, action approvals, and audit history.
 4. **Connect an AI provider safely.** Add a provider adapter for chat, structured intent, retrieval, citations, and multimodal inputs; keep secrets server-side and enforce action policy in Rust. Include a local-model path only if chosen hardware meets performance needs.
-5. **Finish core workflows.** Expand study plans with recurring availability, breaks, and learning tools; add evidence-backed CV, scholarship, and email drafts; extend portfolio drafts with linked evidence, repository/deployment previews, and approved release; build social drafts, approval, and scheduling.
+5. **Finish core workflows.** Expand study plans with recurring availability, breaks, and learning tools; add evidence-backed CV, scholarship, and email drafts plus eligibility/document checklists; extend portfolio drafts with linked evidence, repository/deployment previews, and approved release; build social drafts, approval, and scheduling.
 6. **Package and validate voice/device support.** Check browser and OS speech behavior, microphone disclosures/permissions, no-save handling for live camera context, file/share capture, and native notification restrictions.
 7. **Add connectors with least privilege.** Implement each account separately after reviewing scopes, app approval, quotas, token revocation, and supported account types. Keep finance read-only and message sending/application submission/publishing approval-gated.
 8. **Harden and release.** Add workflow evaluations, accessibility review, server backup/restore, sync and action reconciliation, operational visibility, and a privacy/permission walkthrough before release.
@@ -100,8 +101,8 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 ## Phase 5 — Career, scholarships, and email
 
 - [ ] **CAREER-001 · P1** Build verified fact/evidence library for education, experience, skills, and achievements.
-- [ ] **CAREER-002 · P1** Build opportunity intake, source link, fit notes, eligibility fields, and deadline tracker.
-- [ ] **CAREER-003 · P1** Build application pipeline and next-action views.
+- [~] **CAREER-002 · P1** Build opportunity intake, source link, fit notes, eligibility fields, and deadline tracker. Local job/scholarship intake stores source, fit notes, deadline, and stage; structured eligibility fields remain.
+- [~] **CAREER-003 · P1** Build application pipeline and next-action views. Local stage tracking, sorted deadlines, and pipeline counters exist; next-action plans and reminders remain.
 - [ ] **CAREER-004 · P1** Generate CV, cover letter, essay, and interview-prep drafts with evidence references and unsupported-claim warnings.
 - [ ] **CAREER-005 · P1** Build scholarship eligibility checklist and document checklist.
 - [ ] **CAREER-006 · P1** Add email triage and reply drafts; keep sending behind explicit approval.

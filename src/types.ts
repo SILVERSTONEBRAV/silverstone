@@ -68,11 +68,28 @@ export interface PortfolioProject {
   versions: PortfolioProjectVersion[];
 }
 
+export type OpportunityKind = 'Job' | 'Scholarship';
+export type OpportunityStage = 'Saved' | 'Researching' | 'Drafting' | 'Ready to submit' | 'Submitted' | 'Interview' | 'Offer' | 'Closed';
+
+export interface CareerOpportunity {
+  id: string;
+  kind: OpportunityKind;
+  title: string;
+  organization: string;
+  sourceUrl: string;
+  deadline: string;
+  stage: OpportunityStage;
+  fitNotes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LocalAppState {
-  version: 3;
+  version: 4;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
   studySessions: StudySession[];
   portfolioProjects: PortfolioProject[];
+  careerOpportunities: CareerOpportunity[];
 }

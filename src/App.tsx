@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
-import type { AgentTask, CaptureItem, LocalAppState, PageKey, PortfolioProject, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PageKey, PortfolioProject, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 
 type ModalMode = 'task' | 'capture' | null;
 type Theme = 'light' | 'dark';
+const opportunityStages: OpportunityStage[] = ['Saved', 'Researching', 'Drafting', 'Ready to submit', 'Submitted', 'Interview', 'Offer', 'Closed'];
 
 const navigation: { label: string; items: { key: PageKey; label: string; icon: IconName }[] }[] = [
   {
@@ -44,12 +45,6 @@ const demoEvents = [
   { time: 'Yesterday', title: 'Portfolio note captured', detail: 'Case study · saved on this device', tone: 'green' },
 ];
 
-const opportunityRows = [
-  { name: 'Atlas Future Leaders', type: 'Scholarship', stage: 'Essay draft', due: 'Nov 14', tone: 'violet' },
-  { name: 'Northstar Labs', type: 'Product internship', stage: 'Application prep', due: 'Nov 19', tone: 'blue' },
-  { name: 'Open Horizons Grant', type: 'Fellowship', stage: 'Requirements review', due: 'Nov 26', tone: 'amber' },
-];
-
 function todayLabel() {
   return new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
 }
@@ -77,6 +72,7 @@ function App() {
   const [focusDetails, setFocusDetails] = useState({ title: 'Focused work', minutes: 25, studyGoalId: '' });
   const [studyGoalOpen, setStudyGoalOpen] = useState(false);
   const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
+  const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -146,6 +142,7 @@ function App() {
         setModalMode(null);
         setStudyGoalOpen(false);
         setPortfolioEditor(undefined);
+        setCareerEditor(undefined);
         setFocusOpen(false);
         setMobileMenuOpen(false);
       }
@@ -212,6 +209,22 @@ function App() {
     setToast('Portfolio draft saved locally');
   }
 
+  function saveCareerOpportunity(draft: { id?: string; kind: CareerOpportunity['kind']; title: string; organization: string; sourceUrl: string; deadline: string; stage: OpportunityStage; fitNotes: string }) {
+    const updatedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.careerOpportunities.find((opportunity) => opportunity.id === draft.id);
+      const opportunity: CareerOpportunity = existing
+        ? { ...existing, ...draft, id: existing.id, updatedAt }
+        : { ...draft, id: createId('opportunity'), createdAt: updatedAt, updatedAt };
+      const careerOpportunities = existing
+        ? current.careerOpportunities.map((item) => item.id === existing.id ? opportunity : item)
+        : [opportunity, ...current.careerOpportunities];
+      return { ...current, careerOpportunities };
+    });
+    setCareerEditor(undefined);
+    setToast('Opportunity saved locally');
+  }
+
   async function restoreWorkspace(serializedBackup: string) {
     const restoredState = parseWorkspaceBackup(serializedBackup);
     await saveLocalState(restoredState);
@@ -262,7 +275,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 3, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [] });
+      setAppState({ version: 4, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -342,6 +355,8 @@ function App() {
               onStartStudy={(title, minutes, goalId) => startFocusSession(title, minutes, goalId)}
               onCreateProject={() => setPortfolioEditor(null)}
               onEditProject={setPortfolioEditor}
+              onCreateOpportunity={() => setCareerEditor(null)}
+              onEditOpportunity={setCareerEditor}
             />
           )}
         </main>
@@ -371,6 +386,7 @@ function App() {
       {focusOpen && <FocusDialog title={focusDetails.title} minutes={focusDetails.minutes} onComplete={completeFocusSession} onClose={() => setFocusOpen(false)} />}
       {studyGoalOpen && <StudyGoalDialog current={appState.studyGoal} onSave={saveStudyGoal} onClose={() => setStudyGoalOpen(false)} />}
       {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
+      {careerEditor !== undefined && <CareerOpportunityDialog current={careerEditor} onSave={saveCareerOpportunity} onClose={() => setCareerEditor(undefined)} />}
       {voiceOpen && (
         <VoiceAssistantDialog
           tasks={appState.tasks}
@@ -650,7 +666,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onCreateProject, onEditProject }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -661,6 +677,8 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onStartStudy: (topic: string, minutes: number, goalId: string) => void;
   onCreateProject: () => void;
   onEditProject: (project: PortfolioProject) => void;
+  onCreateOpportunity: () => void;
+  onEditOpportunity: (opportunity: CareerOpportunity) => void;
 }) {
   const copy = pageCopy[page];
   return (
@@ -673,7 +691,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
         </div>
       </div>
       {page === 'study' && <StudyModule goal={state.studyGoal} sessions={state.studySessions} onPlan={onPlanStudy} onStart={onStartStudy} />}
-      {page === 'career' && <CareerModule onToast={onToast} />}
+      {page === 'career' && <CareerModule opportunities={state.careerOpportunities} onCreate={onCreateOpportunity} onEdit={onEditOpportunity} />}
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
       {page === 'studio' && <StudioModule onToast={onToast} />}
       {page === 'library' && <LibraryModule captures={state.captures} onCapture={onCapture} />}
@@ -716,12 +734,63 @@ function LearningRow({ icon, title, detail, percent, tone }: { icon: IconName; t
   </div>;
 }
 
-function CareerModule({ onToast }: { onToast: (message: string) => void }) {
+function formatDeadline(deadline: string): string {
+  if (!deadline) return 'No date';
+  const date = new Date(`${deadline}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? 'Invalid date' : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
+}
+
+function CareerModule({ opportunities, onCreate, onEdit }: { opportunities: CareerOpportunity[]; onCreate: () => void; onEdit: (opportunity: CareerOpportunity) => void }) {
+  const activeOpportunities = opportunities.filter((item) => item.stage !== 'Closed');
+  const thisMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const dueThisMonth = activeOpportunities.filter((item) => item.deadline.startsWith(thisMonth)).length;
+  const readyToSubmit = activeOpportunities.filter((item) => item.stage === 'Ready to submit').length;
+  const sortedOpportunities = [...opportunities].sort((left, right) => (left.deadline || '9999-99-99').localeCompare(right.deadline || '9999-99-99'));
+
   return (
     <div className="module-layout">
-      <section className="module-stats"><MiniStat value="3" label="Active applications" icon="briefcase" /><MiniStat value="2" label="Deadlines this month" icon="calendar" /><MiniStat value="1" label="Needs your review" icon="shield" /></section>
-      <section className="panel module-panel"><PanelHeading eyebrow="YOUR PIPELINE" title="Opportunities in motion" action="Add opportunity" onAction={() => onToast('Opportunity intake is coming next')} /><div className="opportunity-list">{opportunityRows.map((item) => <div className="opportunity-row" key={item.name}><span className={`opportunity-badge badge-${item.tone}`}><Icon name="briefcase" size={16} /></span><span className="opportunity-copy"><strong>{item.name}</strong><small>{item.type}</small></span><span className="stage-pill">{item.stage}</span><span className="opportunity-due"><small>DUE</small><strong>{item.due}</strong></span><button className="icon-button row-chevron" aria-label={`Open ${item.name}`} onClick={() => onToast(`${item.name} details are part of the next milestone`)}><Icon name="arrow" size={15} /></button></div>)}</div></section>
+      <section className="module-stats"><MiniStat value={String(activeOpportunities.length)} label="In the pipeline" icon="briefcase" /><MiniStat value={String(dueThisMonth)} label="Deadlines this month" icon="calendar" /><MiniStat value={String(readyToSubmit)} label="Ready to submit" icon="shield" /></section>
+      <section className="panel module-panel"><PanelHeading eyebrow="YOUR PIPELINE" title="Opportunities in motion" action="Add opportunity" onAction={onCreate} /><div className="opportunity-list">{sortedOpportunities.length ? sortedOpportunities.map((item) => <div className="opportunity-row" key={item.id}><span className={`opportunity-badge badge-${item.kind === 'Scholarship' ? 'violet' : 'blue'}`}><Icon name={item.kind === 'Scholarship' ? 'target' : 'briefcase'} size={16} /></span><span className="opportunity-copy"><strong>{item.title}</strong><small>{item.kind} · {item.organization}</small></span><span className="stage-pill">{item.stage}</span><span className="opportunity-due"><small>DEADLINE</small><strong>{formatDeadline(item.deadline)}</strong></span>{item.sourceUrl && <a className="icon-button row-chevron opportunity-source" href={item.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open source for ${item.title}`}><Icon name="external" size={14} /></a>}<button className="icon-button row-chevron" aria-label={`Edit ${item.title}`} onClick={() => onEdit(item)}><Icon name="arrow" size={15} /></button></div>) : <div className="career-empty"><span className="empty-icon"><Icon name="briefcase" /></span><strong>Your pipeline starts with an opportunity.</strong><span>Add a job or scholarship, save its source and deadline, then track your next step here.</span><button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={15} /> Add an opportunity</button></div>}</div></section>
       <section className="module-cards"><MiniInfoCard icon="file" title="Evidence library" body="Keep your experience and achievements linked to the source that supports them." /><MiniInfoCard icon="sparkle" title="Draft with confidence" body="CV and essay drafts will flag claims that need your confirmation." /></section>
+    </div>
+  );
+}
+
+function CareerOpportunityDialog({ current, onSave, onClose }: { current: CareerOpportunity | null; onSave: (draft: { id?: string; kind: CareerOpportunity['kind']; title: string; organization: string; sourceUrl: string; deadline: string; stage: OpportunityStage; fitNotes: string }) => void; onClose: () => void }) {
+  const [kind, setKind] = useState<CareerOpportunity['kind']>(current?.kind ?? 'Job');
+  const [title, setTitle] = useState(current?.title ?? '');
+  const [organization, setOrganization] = useState(current?.organization ?? '');
+  const [sourceUrl, setSourceUrl] = useState(current?.sourceUrl ?? '');
+  const [deadline, setDeadline] = useState(current?.deadline ?? '');
+  const [stage, setStage] = useState<OpportunityStage>(current?.stage ?? 'Saved');
+  const [fitNotes, setFitNotes] = useState(current?.fitNotes ?? '');
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!title.trim() || !organization.trim()) return;
+    onSave({ id: current?.id, kind, title: title.trim(), organization: organization.trim(), sourceUrl: sourceUrl.trim(), deadline, stage, fitNotes: fitNotes.trim() });
+  }
+
+  return (
+    <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card career-dialog" role="dialog" aria-modal="true" aria-labelledby="career-dialog-title">
+        <div className="dialog-top"><span className="dialog-icon"><Icon name="briefcase" size={18} /></span><button className="icon-button" aria-label="Close opportunity editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+        <span className="panel-eyebrow">LOCAL CAREER TRACKER</span><h2 id="career-dialog-title">{current ? 'Update your next step.' : 'Save an opportunity.'}</h2><p>Keep the source, deadline, fit notes, and application stage together. Nothing is submitted from here.</p>
+        <form onSubmit={submit}>
+          <div className="career-form-grid">
+            <div><label className="field-label" htmlFor="opportunity-kind">Opportunity type</label><select id="opportunity-kind" value={kind} onChange={(event) => setKind(event.target.value as CareerOpportunity['kind'])}><option>Job</option><option>Scholarship</option></select></div>
+            <div><label className="field-label" htmlFor="opportunity-stage">Application stage</label><select id="opportunity-stage" value={stage} onChange={(event) => setStage(event.target.value as OpportunityStage)}>{opportunityStages.map((item) => <option key={item}>{item}</option>)}</select></div>
+          </div>
+          <label className="field-label" htmlFor="opportunity-title">Role or scholarship name</label><input id="opportunity-title" required maxLength={160} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Graduate Product Designer" />
+          <label className="field-label" htmlFor="opportunity-organization">Organization</label><input id="opportunity-organization" required maxLength={120} value={organization} onChange={(event) => setOrganization(event.target.value)} placeholder="Company, university, or foundation" />
+          <div className="career-form-grid">
+            <div><label className="field-label" htmlFor="opportunity-source">Source link</label><input id="opportunity-source" type="url" maxLength={2048} value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://…" /></div>
+            <div><label className="field-label" htmlFor="opportunity-deadline">Deadline</label><input id="opportunity-deadline" type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></div>
+          </div>
+          <label className="field-label" htmlFor="opportunity-fit">Fit notes and questions to verify</label><textarea id="opportunity-fit" rows={4} maxLength={5000} value={fitNotes} onChange={(event) => setFitNotes(event.target.value)} placeholder="Why does this fit? Which eligibility details or requirements should you check?" />
+          <div className="dialog-foot"><span><Icon name="shield" size={13} /> Saved only in this browser</span><div className="career-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim() || !organization.trim()}>Save opportunity<Icon name="arrow" size={14} /></button></div></div>
+        </form>
+      </section>
     </div>
   );
 }
@@ -876,7 +945,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, and portfolio drafts currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, portfolio drafts, and career opportunities currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -890,8 +959,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, portfolio drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, and portfolio drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, and portfolio drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal and sessions, and portfolio drafts with saved versions. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, portfolio drafts, career opportunities, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, portfolio drafts, and career opportunities from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, portfolio drafts, and career opportunities stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal and sessions, portfolio drafts with saved versions, and career opportunities. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="CONNECTIONS" title="No services connected" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
     </>
