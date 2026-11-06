@@ -1,0 +1,12 @@
+{
+  "name": "Silverstone Personal Agent",
+  "short_name": "Silverstone",
+  "description": "A thoughtful workspace for your plans, study, career, and creative work.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#0d1523",
+  "icons": [
+    { "src": "/silverstone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
