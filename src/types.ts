@@ -112,6 +112,8 @@ export interface CareerOpportunity {
   fitNotes: string;
   eligibilityItems: EligibilityCheck[];
   documents: ApplicationDocument[];
+  nextAction: string;
+  nextActionDue: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -210,7 +212,7 @@ export interface CareerEvidence {
 }
 
 export interface LocalAppState {
-  version: 10;
+  version: 11;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;

@@ -315,6 +315,7 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
 .opportunity-copy { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 150px; }
 .opportunity-copy strong { color: var(--ink); font-size: 10px; font-weight: 600; }
 .opportunity-copy small { color: var(--muted); font-size: 9px; }
+.opportunity-copy .opportunity-next-action { color: #6d62a8; font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stage-pill { padding: 5px 8px; color: var(--muted-strong); font-size: 8px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 5px; white-space: nowrap; }
 .opportunity-due { display: flex; flex-direction: column; gap: 4px; min-width: 46px; text-align: right; }
 .opportunity-due small { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 7px; }
@@ -828,6 +829,9 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
 .evidence-empty .button { margin-top: 5px; }
 .career-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .scholarship-progress { color: #6d62a8 !important; font-size: 8px !important; }
+.career-next-action-fields { align-items: start; }
+.career-dialog .field-hint { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; line-height: 1.4; }
+.career-dialog input:disabled { cursor: not-allowed; opacity: .55; }
 .scholarship-checklists { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .scholarship-checklist-head { padding: 12px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 9px; }
 .scholarship-checklist-head p { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }

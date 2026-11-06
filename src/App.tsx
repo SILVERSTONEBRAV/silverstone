@@ -505,7 +505,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 10, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [] });
+      setAppState({ version: 11, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -763,6 +763,7 @@ function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocu
   const weekStudyMinutes = studyDays.reduce((total, day) => total + day.minutes, 0);
   const activeOpportunities = state.careerOpportunities.filter((item) => item.stage !== 'Closed');
   const nextOpportunity = [...activeOpportunities].filter((item) => item.deadline).sort((left, right) => left.deadline.localeCompare(right.deadline))[0] ?? null;
+  const nextCareerAction = [...activeOpportunities].filter((item) => item.nextAction.trim()).sort((left, right) => (left.nextActionDue || '9999-99-99').localeCompare(right.nextActionDue || '9999-99-99'))[0] ?? null;
   const nextInterview = [...state.interviewPreps]
     .filter((item) => item.scheduledAt && new Date(item.scheduledAt).getTime() > Date.now())
     .sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt))[0] ?? null;
@@ -778,9 +779,13 @@ function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocu
   const suggestedStudyMinutes = recommendedStudyBlock(studyGoal);
   const portfolioCount = state.portfolioProjects.length;
   const dueCards = state.studyCards.filter((card) => new Date(card.nextReviewAt).getTime() <= Date.now());
+  const careerActionTiming = nextCareerAction?.nextActionDue
+    ? nextCareerAction.nextActionDue < todayKey ? `Overdue · ${formatDeadline(nextCareerAction.nextActionDue)}` : nextCareerAction.nextActionDue === todayKey ? 'Due today' : `Due ${formatDeadline(nextCareerAction.nextActionDue)}`
+    : 'No date set';
   const radarItems = [
     ...(nextInterview ? [{ icon: 'briefcase' as const, label: 'INTERVIEW', title: `${nextInterview.company} · ${nextInterview.format}`, detail: `${formatPlannedTime(nextInterview.scheduledAt)} · ${nextInterview.readinessScore > 0 ? `${nextInterview.readinessScore}% readiness` : 'Needs prep'}`, onClick: () => onNavigate('career') }] : []),
     ...(dueCards.length ? [{ icon: 'clock' as const, label: 'RECALL', title: `${dueCards.length} recall card${dueCards.length === 1 ? '' : 's'} due`, detail: `Spaced review · ${dueCards[0]?.topic ?? 'General'}`, onClick: () => onNavigate('study') }] : []),
+    ...(nextCareerAction ? [{ icon: 'check' as const, label: 'CAREER NEXT ACTION', title: nextCareerAction.nextAction, detail: `${nextCareerAction.title} · ${careerActionTiming}`, onClick: () => onNavigate('career') }] : []),
     ...(studyGoal ? [{ icon: 'book' as const, label: 'STUDY', title: studyGoal.topic, detail: checkedInToday ? `${studyGoal.availableMinutesToday} minutes available · ${suggestedStudyMinutes ? `${suggestedStudyMinutes}-minute session suggested` : 'no time planned today'}` : 'Check in with today’s free time to plan a session.', onClick: () => onNavigate('study') }] : []),
     ...(nextOpportunity ? [{ icon: 'briefcase' as const, label: 'DEADLINE', title: nextOpportunity.title, detail: `${nextOpportunity.kind} · ${formatDeadline(nextOpportunity.deadline)} · ${nextOpportunity.organization}`, onClick: () => onNavigate('career') }] : []),
     ...(nextPlannedPost ? [{ icon: 'send' as const, label: 'CONTENT PLAN', title: nextPlannedPost.title || nextPlannedPost.channels.join(' + '), detail: `${formatPlannedTime(nextPlannedPost.plannedFor)} · local draft plan; nothing is published`, onClick: () => onNavigate('studio') }] : []),
@@ -1184,6 +1189,7 @@ function CareerModule({
                         <strong>{item.title}</strong>
                         <small>{item.kind} · {item.organization}</small>
                         {item.kind === 'Scholarship' && <small className="scholarship-progress">Eligibility {eligibilitySummary} · Documents {documentSummary}</small>}
+                        {item.nextAction && <small className="opportunity-next-action">Next: {item.nextAction}{item.nextActionDue ? ` · ${formatDeadline(item.nextActionDue)}` : ''}</small>}
                       </span>
                       <span className="stage-pill">{item.stage}</span>
                       <span className="opportunity-due">
@@ -1506,6 +1512,8 @@ function CareerOpportunityDialog({ current, onSave, onClose }: { current: Career
   const [deadline, setDeadline] = useState(current?.deadline ?? '');
   const [stage, setStage] = useState<OpportunityStage>(current?.stage ?? 'Saved');
   const [fitNotes, setFitNotes] = useState(current?.fitNotes ?? '');
+  const [nextAction, setNextAction] = useState(current?.nextAction ?? '');
+  const [nextActionDue, setNextActionDue] = useState(current?.nextActionDue ?? '');
   const [eligibilityItems, setEligibilityItems] = useState<EligibilityCheck[]>(current?.eligibilityItems ?? []);
   const [documents, setDocuments] = useState<ApplicationDocument[]>(current?.documents ?? []);
 
@@ -1530,14 +1538,14 @@ function CareerOpportunityDialog({ current, onSave, onClose }: { current: Career
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!title.trim() || !organization.trim()) return;
-    onSave({ id: current?.id, kind, title: title.trim(), organization: organization.trim(), sourceUrl: sourceUrl.trim(), deadline, stage, fitNotes: fitNotes.trim(), eligibilityItems: eligibilityItems.map((item) => ({ ...item, requirement: item.requirement.trim(), notes: item.notes.trim(), sourceUrl: item.sourceUrl.trim() })).filter((item) => item.requirement), documents: documents.map((item) => ({ ...item, name: item.name.trim(), notes: item.notes.trim() })).filter((item) => item.name) });
+    onSave({ id: current?.id, kind, title: title.trim(), organization: organization.trim(), sourceUrl: sourceUrl.trim(), deadline, stage, fitNotes: fitNotes.trim(), eligibilityItems: eligibilityItems.map((item) => ({ ...item, requirement: item.requirement.trim(), notes: item.notes.trim(), sourceUrl: item.sourceUrl.trim() })).filter((item) => item.requirement), documents: documents.map((item) => ({ ...item, name: item.name.trim(), notes: item.notes.trim() })).filter((item) => item.name), nextAction: nextAction.trim(), nextActionDue: nextAction.trim() ? nextActionDue : '' });
   }
 
   return (
     <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="dialog-card career-dialog" role="dialog" aria-modal="true" aria-labelledby="career-dialog-title">
         <div className="dialog-top"><span className="dialog-icon"><Icon name="briefcase" size={18} /></span><button className="icon-button" aria-label="Close opportunity editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
-        <span className="panel-eyebrow">LOCAL CAREER TRACKER</span><h2 id="career-dialog-title">{current ? 'Update your next step.' : 'Save an opportunity.'}</h2><p>Keep the source, deadline, fit notes, and application stage together. Nothing is submitted from here.</p>
+        <span className="panel-eyebrow">LOCAL CAREER TRACKER</span><h2 id="career-dialog-title">{current ? 'Update your next step.' : 'Save an opportunity.'}</h2><p>Keep the source, deadline, next action, and application stage together. Nothing is submitted from here.</p>
         <form onSubmit={submit}>
           <div className="career-form-grid">
             <div><label className="field-label" htmlFor="opportunity-kind">Opportunity type</label><select id="opportunity-kind" value={kind} onChange={(event) => setKind(event.target.value as CareerOpportunity['kind'])}><option>Job</option><option>Scholarship</option></select></div>
@@ -1548,6 +1556,10 @@ function CareerOpportunityDialog({ current, onSave, onClose }: { current: Career
           <div className="career-form-grid">
             <div><label className="field-label" htmlFor="opportunity-source">Source link</label><input id="opportunity-source" type="url" maxLength={2048} value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://…" /></div>
             <div><label className="field-label" htmlFor="opportunity-deadline">Deadline</label><input id="opportunity-deadline" type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></div>
+          </div>
+          <div className="career-form-grid career-next-action-fields">
+            <div><label className="field-label" htmlFor="opportunity-next-action">Next action (optional)</label><input id="opportunity-next-action" maxLength={240} value={nextAction} onChange={(event) => { const value = event.target.value; setNextAction(value); if (!value.trim()) setNextActionDue(''); }} placeholder="e.g. Ask the registrar for an official transcript" /></div>
+            <div><label className="field-label" htmlFor="opportunity-next-action-due">Remind me in Today</label><input id="opportunity-next-action-due" type="date" value={nextActionDue} disabled={!nextAction.trim()} onChange={(event) => setNextActionDue(event.target.value)} /><small className="field-hint">Shows as due or overdue in your local Today radar. No external notification is sent.</small></div>
           </div>
           <label className="field-label" htmlFor="opportunity-fit">Fit notes and questions to verify</label><textarea id="opportunity-fit" rows={4} maxLength={5000} value={fitNotes} onChange={(event) => setFitNotes(event.target.value)} placeholder="Why does this fit? Which eligibility details or requirements should you check?" />
           {kind === 'Scholarship' && <div className="scholarship-checklists">

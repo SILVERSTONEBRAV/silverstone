@@ -59,7 +59,7 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 10,
+    version: 11,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
@@ -81,7 +81,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 10,
+      version: 11,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
@@ -96,7 +96,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     };
   }
   const version = candidate.version;
-  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9, 10].includes(version) || !Array.isArray(candidate.studySessions)) return null;
+  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -111,9 +111,9 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!Array.isArray(projects) || !projects.every(isPortfolioProject)) return null;
   const rawCareerOpportunities = version === 2 || version === 3 ? [] : candidate.careerOpportunities;
   if (!Array.isArray(rawCareerOpportunities)) return null;
-  const careerOpportunities = version < 10
+  const careerOpportunities = version < 11
     ? rawCareerOpportunities.map((item) => item && typeof item === 'object' && !Array.isArray(item)
-      ? { ...item, eligibilityItems: Array.isArray((item as Partial<CareerOpportunity>).eligibilityItems) ? (item as Partial<CareerOpportunity>).eligibilityItems : [], documents: Array.isArray((item as Partial<CareerOpportunity>).documents) ? (item as Partial<CareerOpportunity>).documents : [] }
+      ? { ...item, eligibilityItems: Array.isArray((item as Partial<CareerOpportunity>).eligibilityItems) ? (item as Partial<CareerOpportunity>).eligibilityItems : [], documents: Array.isArray((item as Partial<CareerOpportunity>).documents) ? (item as Partial<CareerOpportunity>).documents : [], nextAction: typeof (item as Partial<CareerOpportunity>).nextAction === 'string' ? (item as Partial<CareerOpportunity>).nextAction : '', nextActionDue: typeof (item as Partial<CareerOpportunity>).nextActionDue === 'string' ? (item as Partial<CareerOpportunity>).nextActionDue : '' }
       : item)
     : rawCareerOpportunities;
   if (!careerOpportunities.every(isCareerOpportunity)) return null;
@@ -137,7 +137,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 10,
+    version: 11,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
@@ -214,12 +214,15 @@ function isCareerOpportunity(value: unknown): value is CareerOpportunity {
     && (!opportunity.sourceUrl || (() => { try { return ['http:', 'https:'].includes(new URL(opportunity.sourceUrl).protocol); } catch { return false; } })());
   const validEligibility = Array.isArray(opportunity.eligibilityItems) && opportunity.eligibilityItems.length <= 100 && opportunity.eligibilityItems.every(isEligibilityCheck);
   const validDocuments = Array.isArray(opportunity.documents) && opportunity.documents.length <= 100 && opportunity.documents.every(isApplicationDocument);
+  const validNextActionDue = typeof opportunity.nextActionDue === 'string' && (opportunity.nextActionDue === '' || isDateOnly(opportunity.nextActionDue));
   return typeof opportunity.id === 'string' && ['Job', 'Scholarship'].includes(opportunity.kind ?? '')
     && typeof opportunity.title === 'string' && opportunity.title.trim().length > 0 && opportunity.title.length <= 160
     && typeof opportunity.organization === 'string' && opportunity.organization.trim().length > 0 && opportunity.organization.length <= 120
     && validUrl && validDeadline && stages.includes(opportunity.stage as OpportunityStage)
     && typeof opportunity.fitNotes === 'string' && opportunity.fitNotes.length <= 5000
     && validEligibility && validDocuments
+    && typeof opportunity.nextAction === 'string' && opportunity.nextAction.length <= 240 && validNextActionDue
+    && (!opportunity.nextActionDue || Boolean(opportunity.nextAction.trim()))
     && typeof opportunity.createdAt === 'string' && Number.isFinite(Date.parse(opportunity.createdAt))
     && typeof opportunity.updatedAt === 'string' && Number.isFinite(Date.parse(opportunity.updatedAt));
 }
