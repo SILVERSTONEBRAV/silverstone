@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Scope:** Product, interface, architecture, offline behavior, integrations, and release plan
-**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, career opportunity tracking, social post drafts with local review times, manual active-recall cards with local review intervals, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history. Optional Supabase email-link auth, passkey sign-in, and revision-checked manual workspace copy/restore are implemented; credentials and the SQL migration still need to be configured for deployment. Workspace backup/restore includes local records. The minimal Rust health API is scaffolded; desktop/mobile packaging, automatic sync, AI, and external integrations remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
+**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, career opportunity tracking, social post drafts with local review times, manual active-recall cards with local review intervals, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history. The Career workspace includes manually configured interview plans, autosaved mock answers, browser dictation, a transparent deterministic local assessment rubric, editable STAR stories, a prep checklist, reverse-interview prompts, pitch/debrief notes, and Study recall handoff. Optional Supabase email-link auth, passkey sign-in, and revision-checked manual workspace copy/restore are implemented; credentials and the SQL migration still need to be configured for deployment. Workspace backup/restore includes local records. The minimal Rust health API is scaffolded; desktop/mobile packaging, automatic sync, AI-backed assessment, and external integrations remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
 
 ## 1. Product vision
 
@@ -59,6 +59,7 @@ Keep original assets distinct from generated transcripts, OCR, summaries, and st
 - Save opportunities and extract organization, role/program, location, eligibility, deadline, and source link.
 - Compare requirements with a verified profile and evidence-backed experience facts.
 - Generate tailored CVs, cover letters, essays, checklists, and interview notes.
+- Prepare interviews with role-specific setup, practice questions, answer feedback, a reusable STAR story bank, a readiness checklist, interviewer questions, and post-interview debrief notes.
 - Mark unsupported claims and ask for missing information rather than inventing it.
 - Track stages, deadlines, contacts, documents, and next actions.
 - Prepare application forms where possible; require review before submission.

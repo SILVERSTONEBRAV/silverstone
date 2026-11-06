@@ -3,9 +3,9 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
-import type { AgentTask, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
-import { DEFAULT_QUESTIONS_BY_FORMAT, DEFAULT_QUESTIONS_TO_ASK, INTERVIEW_FORMATS, assessInterviewAnswer, calculateReadiness } from './interview';
+import { DEFAULT_QUESTIONS_BY_FORMAT, DEFAULT_QUESTIONS_TO_ASK, INTERVIEW_FORMATS, analyzeFillerWords, assessInterviewAnswer, calculateReadiness } from './interview';
 
 type ModalMode = 'task' | 'capture' | null;
 type Theme = 'light' | 'dark';
@@ -105,6 +105,7 @@ function App() {
   const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
   const [interviewEditor, setInterviewEditor] = useState<{ prep: InterviewPrep | null; opportunityId?: string } | undefined>(undefined);
   const [interviewPractice, setInterviewPractice] = useState<InterviewPrep | undefined>(undefined);
+  const [storyEditor, setStoryEditor] = useState<StarStory | null | undefined>(undefined);
   const [socialEditor, setSocialEditor] = useState<SocialPostDraft | null | undefined>(undefined);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -305,7 +306,7 @@ function App() {
     setToast('Opportunity saved locally');
   }
 
-  function saveInterviewPrep(prep: InterviewPrep) {
+  function saveInterviewPrep(prep: InterviewPrep, showToast = true) {
     const updatedAt = new Date().toISOString();
     setAppState((current) => {
       const existing = current.interviewPreps.find((item) => item.id === prep.id);
@@ -324,7 +325,7 @@ function App() {
     if (interviewPractice?.id === prep.id) {
       setInterviewPractice(prep);
     }
-    setToast(prep.id ? 'Interview preparation saved' : 'Interview prep added to workspace');
+    if (showToast) setToast(prep.id ? 'Interview preparation saved' : 'Interview prep added to workspace');
   }
 
   function deleteInterviewPrep(id: string) {
@@ -336,6 +337,59 @@ function App() {
       setInterviewPractice(undefined);
     }
     setToast('Interview prep removed');
+  }
+
+  function saveStarStory(draft: { id?: string; title: string; competencies: string[]; situation: string; task: string; action: string; result: string; metrics: string }) {
+    const updatedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.starStories.find((item) => item.id === draft.id);
+      const story: StarStory = existing
+        ? { ...existing, ...draft, id: existing.id, updatedAt }
+        : { ...draft, id: createId('star-story'), createdAt: updatedAt, updatedAt };
+      const starStories = existing
+        ? current.starStories.map((item) => (item.id === existing.id ? story : item))
+        : [story, ...current.starStories];
+      return { ...current, starStories };
+    });
+    setStoryEditor(undefined);
+    setToast(draft.id ? 'STAR story updated' : 'STAR story added to bank');
+  }
+
+  function deleteStarStory(id: string) {
+    setAppState((current) => ({
+      ...current,
+      starStories: current.starStories.filter((item) => item.id !== id),
+    }));
+    setToast('Story removed from bank');
+  }
+
+  function markStarStoryUsed(id: string) {
+    const lastUsedAt = new Date().toISOString();
+    setAppState((current) => ({
+      ...current,
+      starStories: current.starStories.map((story) => story.id === id ? { ...story, lastUsedAt } : story),
+    }));
+  }
+
+  function addStudyCardFromInterview(question: string, answer: string, topic: string) {
+    const now = new Date().toISOString();
+    const card: StudyCard = {
+      id: createId('study-card'),
+      topic: topic || 'Interview Prep',
+      question,
+      answer,
+      nextReviewAt: now,
+      intervalDays: 0,
+      reviewCount: 0,
+      lastReviewedAt: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    setAppState((current) => ({
+      ...current,
+      studyCards: [card, ...current.studyCards],
+    }));
+    setToast('Added question to Study recall deck!');
   }
 
   function saveSocialPost(draft: { id?: string; title: string; body: string; channels: SocialChannel[]; plannedFor: string; timezone: string }) {
@@ -410,7 +464,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 7, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [] });
+      setAppState({ version: 8, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -498,6 +552,9 @@ function App() {
               onEditInterview={(prep) => setInterviewEditor({ prep })}
               onPracticeInterview={(prep) => setInterviewPractice(prep)}
               onDeleteInterview={deleteInterviewPrep}
+              onCreateStory={() => setStoryEditor(null)}
+              onEditStory={setStoryEditor}
+              onDeleteStory={deleteStarStory}
               onCreateSocialPost={() => setSocialEditor(null)}
               onEditSocialPost={setSocialEditor}
             />
@@ -543,8 +600,18 @@ function App() {
       {interviewPractice !== undefined && (
         <InterviewPracticeDialog
           prep={interviewPractice}
+          starStories={appState.starStories}
+          onAddStudyCard={addStudyCardFromInterview}
+          onUseStarStory={markStarStoryUsed}
           onSave={saveInterviewPrep}
           onClose={() => setInterviewPractice(undefined)}
+        />
+      )}
+      {storyEditor !== undefined && (
+        <StarStoryDialog
+          current={storyEditor}
+          onSave={saveStarStory}
+          onClose={() => setStoryEditor(undefined)}
         />
       )}
       {socialEditor !== undefined && <SocialPostDialog current={socialEditor} onSave={saveSocialPost} onClose={() => setSocialEditor(undefined)} />}
@@ -853,7 +920,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateSocialPost, onEditSocialPost }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateStory, onEditStory, onDeleteStory, onCreateSocialPost, onEditSocialPost }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -873,6 +940,9 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onEditInterview: (prep: InterviewPrep) => void;
   onPracticeInterview: (prep: InterviewPrep) => void;
   onDeleteInterview: (id: string) => void;
+  onCreateStory: () => void;
+  onEditStory: (story: StarStory) => void;
+  onDeleteStory: (id: string) => void;
   onCreateSocialPost: () => void;
   onEditSocialPost: (post: SocialPostDraft) => void;
 }) {
@@ -891,12 +961,16 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
         <CareerModule
           opportunities={state.careerOpportunities}
           interviewPreps={state.interviewPreps}
+          starStories={state.starStories}
           onCreate={onCreateOpportunity}
           onEdit={onEditOpportunity}
           onCreateInterview={onCreateInterview}
           onEditInterview={onEditInterview}
           onPracticeInterview={onPracticeInterview}
           onDeleteInterview={onDeleteInterview}
+          onCreateStory={onCreateStory}
+          onEditStory={onEditStory}
+          onDeleteStory={onDeleteStory}
         />
       )}
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
@@ -961,21 +1035,29 @@ function formatDeadline(deadline: string): string {
 function CareerModule({
   opportunities,
   interviewPreps,
+  starStories,
   onCreate,
   onEdit,
   onCreateInterview,
   onEditInterview,
   onPracticeInterview,
   onDeleteInterview,
+  onCreateStory,
+  onEditStory,
+  onDeleteStory,
 }: {
   opportunities: CareerOpportunity[];
   interviewPreps: InterviewPrep[];
+  starStories: StarStory[];
   onCreate: () => void;
   onEdit: (opportunity: CareerOpportunity) => void;
   onCreateInterview: (opportunityId?: string) => void;
   onEditInterview: (prep: InterviewPrep) => void;
   onPracticeInterview: (prep: InterviewPrep) => void;
   onDeleteInterview: (id: string) => void;
+  onCreateStory: () => void;
+  onEditStory: (story: StarStory) => void;
+  onDeleteStory: (id: string) => void;
 }) {
   const [tab, setTab] = useState<'pipeline' | 'interviews'>('pipeline');
   const activeOpportunities = opportunities.filter((item) => item.stage !== 'Closed');
@@ -1104,7 +1186,7 @@ function CareerModule({
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span className="interview-format-pill">{prep.format}</span>
                           <span className={`readiness-gauge ${readinessClass}`}>
-                            {prep.readinessScore > 0 ? `${prep.readinessScore}%` : '0%'} {readinessLabel}
+                            {prep.readinessScore > 0 ? `${prep.readinessScore}% ${readinessLabel}` : 'Not Assessed'}
                           </span>
                         </div>
                       </div>
@@ -1143,9 +1225,86 @@ function CareerModule({
         </>
       )}
 
+      <section className="panel module-panel story-bank-panel">
+        <PanelHeading eyebrow="REUSABLE INTERVIEW EVIDENCE" title="Your STAR story bank" action="Add a story" onAction={onCreateStory} />
+        {starStories.length ? (
+          <div className="story-card-list">
+            {starStories.map((story) => (
+              <article className="story-card" key={story.id}>
+                <div className="story-card-header">
+                  <div className="story-card-titles"><strong>{story.title}</strong><small>{story.lastUsedAt ? `Last used ${formatPlannedTime(story.lastUsedAt)}` : 'Not used in a practice session yet'}</small></div>
+                  {story.metrics && <span className="story-metric-badge"><Icon name="trend" size={12} /> {story.metrics}</span>}
+                </div>
+                {story.competencies.length > 0 && <div className="competency-tags">{story.competencies.map((competency) => <span className="competency-pill" key={competency}>{competency}</span>)}</div>}
+                <div className="star-grid-preview">
+                  <div className="star-grid-item"><small>SITUATION</small><p>{story.situation || 'Add the context.'}</p></div>
+                  <div className="star-grid-item"><small>TASK</small><p>{story.task || 'Describe your responsibility.'}</p></div>
+                  <div className="star-grid-item"><small>ACTION</small><p>{story.action || 'Explain what you did.'}</p></div>
+                  <div className="star-grid-item"><small>RESULT</small><p>{story.result || 'Add the outcome.'}</p></div>
+                </div>
+                <div className="story-card-actions">
+                  <button className="button button-secondary" onClick={() => onEditStory(story)}><Icon name="more" size={13} /> Edit story</button>
+                  <button className="text-action" onClick={() => { if (window.confirm(`Remove “${story.title}” from your STAR story bank?`)) onDeleteStory(story.id); }}><Icon name="close" size={13} /> Remove</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state compact"><span className="empty-icon"><Icon name="layers" /></span><strong>Build a bank of real examples.</strong><span>Save a challenge, your role, the actions you took, and the results. You can insert a story into a practice answer, then tailor it to the question.</span><button className="button button-secondary" onClick={onCreateStory}><Icon name="plus" size={14} /> Add your first STAR story</button></div>
+        )}
+      </section>
+
       <section className="module-cards">
         <MiniInfoCard icon="target" title="STAR Method evaluation" body="Practice framing behavioral answers with Situation, Task, Action, and measurable Results." />
         <MiniInfoCard icon="sparkle" title="Questions for the team" body="Prepare thoughtful reverse-interview questions about tech debt, culture, and first 90 days." />
+      </section>
+    </div>
+  );
+}
+
+function StarStoryDialog({ current, onSave, onClose }: {
+  current: StarStory | null;
+  onSave: (draft: { id?: string; title: string; competencies: string[]; situation: string; task: string; action: string; result: string; metrics: string }) => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(current?.title ?? '');
+  const [competenciesText, setCompetenciesText] = useState(current?.competencies.join(', ') ?? '');
+  const [situation, setSituation] = useState(current?.situation ?? '');
+  const [task, setTask] = useState(current?.task ?? '');
+  const [action, setAction] = useState(current?.action ?? '');
+  const [result, setResult] = useState(current?.result ?? '');
+  const [metrics, setMetrics] = useState(current?.metrics ?? '');
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const competencies = [...new Set(competenciesText.split(',').map((item) => item.trim()).filter(Boolean))].slice(0, 12);
+    onSave({ id: current?.id, title: title.trim(), competencies, situation: situation.trim(), task: task.trim(), action: action.trim(), result: result.trim(), metrics: metrics.trim() });
+  }
+
+  return (
+    <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card career-dialog star-story-dialog" role="dialog" aria-modal="true" aria-labelledby="star-story-dialog-title">
+        <div className="dialog-top"><span className="dialog-icon"><Icon name="layers" size={18} /></span><button className="icon-button" aria-label="Close STAR story editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+        <span className="panel-eyebrow">CAREER · INTERVIEW STORY BANK</span>
+        <h2 id="star-story-dialog-title">{current ? 'Refine this story.' : 'Save a story from your work.'}</h2>
+        <p>Keep the facts grounded in your experience. Add a metric only when you can support it; the story bank stays in your local workspace.</p>
+        <form onSubmit={submit}>
+          <label className="field-label" htmlFor="star-story-title">Story title</label>
+          <input id="star-story-title" required maxLength={160} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Reduced checkout latency during a launch" />
+          <label className="field-label" htmlFor="star-story-competencies">Skills or competencies</label>
+          <input id="star-story-competencies" maxLength={400} value={competenciesText} onChange={(event) => setCompetenciesText(event.target.value)} placeholder="e.g. Ownership, debugging, collaboration" />
+          <label className="field-label" htmlFor="star-story-situation">Situation · What was happening?</label>
+          <textarea id="star-story-situation" rows={2} maxLength={5000} value={situation} onChange={(event) => setSituation(event.target.value)} placeholder="Give enough context to understand the challenge." />
+          <label className="field-label" htmlFor="star-story-task">Task · What were you responsible for?</label>
+          <textarea id="star-story-task" rows={2} maxLength={5000} value={task} onChange={(event) => setTask(event.target.value)} placeholder="State your goal, constraints, and individual responsibility." />
+          <label className="field-label" htmlFor="star-story-action">Action · What did you personally do?</label>
+          <textarea id="star-story-action" rows={3} maxLength={10000} value={action} onChange={(event) => setAction(event.target.value)} placeholder="Describe the decisions, steps, and collaboration you personally led." />
+          <label className="field-label" htmlFor="star-story-result">Result · What changed or did you learn?</label>
+          <textarea id="star-story-result" rows={2} maxLength={5000} value={result} onChange={(event) => setResult(event.target.value)} placeholder="Include a verifiable outcome, customer impact, or lesson learned." />
+          <label className="field-label" htmlFor="star-story-metrics">Evidence or metrics (optional)</label>
+          <input id="star-story-metrics" maxLength={1000} value={metrics} onChange={(event) => setMetrics(event.target.value)} placeholder="e.g. p95 latency down 28%, measured over two weeks" />
+          <div className="dialog-foot"><span><Icon name="shield" size={13} /> Saved only in this browser</span><div className="career-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim()}>Save STAR story<Icon name="arrow" size={14} /></button></div></div>
+        </form>
       </section>
     </div>
   );
@@ -1267,6 +1426,7 @@ function InterviewPrepDialog({
       jobContext: jobContext.trim(),
       questions,
       questionsToAsk,
+      preparationChecklist: current?.preparationChecklist,
       notes: current?.notes ?? '',
       readinessScore: current?.readinessScore ?? 0,
       createdAt: current?.createdAt ?? new Date().toISOString(),
@@ -1366,11 +1526,17 @@ function InterviewPrepDialog({
 
 function InterviewPracticeDialog({
   prep,
+  starStories,
+  onAddStudyCard,
+  onUseStarStory,
   onSave,
   onClose,
 }: {
   prep: InterviewPrep;
-  onSave: (updated: InterviewPrep) => void;
+  starStories: StarStory[];
+  onAddStudyCard: (question: string, answer: string, topic: string) => void;
+  onUseStarStory: (id: string) => void;
+  onSave: (updated: InterviewPrep, showToast?: boolean) => void;
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'questions' | 'questionsToAsk' | 'cheatsheet'>('questions');
@@ -1378,25 +1544,45 @@ function InterviewPracticeDialog({
   const [questions, setQuestions] = useState<InterviewAssessmentItem[]>(prep.questions);
   const [questionsToAsk, setQuestionsToAsk] = useState<string[]>(prep.questionsToAsk);
   const [notes, setNotes] = useState(prep.notes);
-  const [elevatorPitch, setElevatorPitch] = useState('');
+  const [elevatorPitch, setElevatorPitch] = useState(prep.elevatorPitch ?? '');
+  const [preparationChecklist, setPreparationChecklist] = useState<InterviewPreparationChecklist>(prep.preparationChecklist ?? {
+    researchedOrganization: false,
+    reviewedRoleRequirements: false,
+    preparedEvidenceStories: false,
+    checkedLogistics: false,
+    preparedQuestions: false,
+  });
   const [newQuestionText, setNewQuestionText] = useState('');
   const [newQuestionCategory, setNewQuestionCategory] = useState<InterviewAssessmentItem['category']>('behavioral');
   const [newQuestionToAsk, setNewQuestionToAsk] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
+  const [selectedStoryId, setSelectedStoryId] = useState('');
   const speechRecognizerRef = useRef<SpeechRecognizer | null>(null);
 
   const currentQ = questions[selectedIdx] ?? null;
   const wordCount = currentQ?.userAnswer.trim() ? currentQ.userAnswer.trim().split(/\s+/).length : 0;
   const estimatedSeconds = Math.round((wordCount / 135) * 60);
+  const fillerAnalysis = analyzeFillerWords(currentQ?.userAnswer ?? '');
+  const latestAnswerRef = useRef(currentQ?.userAnswer ?? '');
+
+  useEffect(() => {
+    latestAnswerRef.current = currentQ?.userAnswer ?? '';
+  }, [currentQ?.userAnswer, selectedIdx]);
+
+  useEffect(() => () => speechRecognizerRef.current?.stop(), []);
 
   const readinessScore = calculateReadiness(questions);
   const readinessClass = readinessScore >= 75 ? 'is-high' : readinessScore >= 50 ? 'is-medium' : readinessScore > 0 ? 'is-low' : 'is-empty';
 
   function handleAnswerChange(text: string) {
     if (!currentQ) return;
-    const updated = questions.map((item, index) => (index === selectedIdx ? { ...item, userAnswer: text } : item));
+    latestAnswerRef.current = text;
+    const updated = questions.map((item, index) => (index === selectedIdx
+      ? { ...item, userAnswer: text, score: 0, starCoverage: undefined, strengths: [], improvements: [], suggestedPhrasing: undefined, assessedAt: undefined }
+      : item));
     setQuestions(updated);
+    onSave({ ...prep, questions: updated, questionsToAsk, notes, elevatorPitch, preparationChecklist, readinessScore: calculateReadiness(updated) }, false);
   }
 
   function toggleDictation() {
@@ -1423,15 +1609,7 @@ function InterviewPracticeDialog({
           finalSegment += item[0].transcript + ' ';
         }
       }
-      if (finalSegment && currentQ) {
-        setQuestions((prev) =>
-          prev.map((item, index) =>
-            index === selectedIdx
-              ? { ...item, userAnswer: (item.userAnswer ? item.userAnswer.trimEnd() + ' ' : '') + finalSegment.trim() }
-              : item
-          )
-        );
-      }
+      if (finalSegment && currentQ) handleAnswerChange(`${latestAnswerRef.current.trimEnd()} ${finalSegment.trim()}`.trim());
     };
     recognizer.onerror = () => setIsListening(false);
     recognizer.onend = () => setIsListening(false);
@@ -1451,7 +1629,8 @@ function InterviewPracticeDialog({
       currentQ.userAnswer,
       currentQ.category,
       prep.roleTitle,
-      prep.company
+      prep.company,
+      `${prep.focusTopics.join(' ')} ${prep.jobContext}`
     );
     const updatedQ: InterviewAssessmentItem = {
       ...currentQ,
@@ -1470,8 +1649,29 @@ function InterviewPracticeDialog({
       questions: updatedList,
       questionsToAsk,
       notes,
+      elevatorPitch,
+      preparationChecklist,
       readinessScore: newReadiness,
     });
+  }
+
+  function insertStarStory() {
+    const story = starStories.find((item) => item.id === selectedStoryId);
+    if (!story || !currentQ) return;
+    const answer = [
+      `Situation: ${story.situation}`,
+      `Task: ${story.task}`,
+      `Action: ${story.action}`,
+      `Result: ${story.result}${story.metrics ? ` ${story.metrics}` : ''}`,
+    ].join('\n\n');
+    handleAnswerChange(answer);
+    onUseStarStory(story.id);
+  }
+
+  function togglePreparationItem(key: keyof InterviewPreparationChecklist) {
+    const updated = { ...preparationChecklist, [key]: !preparationChecklist[key] };
+    setPreparationChecklist(updated);
+    onSave({ ...prep, questions, questionsToAsk, notes, elevatorPitch, preparationChecklist: updated, readinessScore: calculateReadiness(questions) }, false);
   }
 
   function addCustomQuestion(e: FormEvent) {
@@ -1548,11 +1748,11 @@ Warm regards,
               {prep.company} · {prep.format}
             </small>
             <h2 id="interview-practice-title">{prep.roleTitle} Interview Practice</h2>
-            <p>Practice aloud or typed. The assessment engine evaluates STAR structure, verbal pacing, ownership, and measurable evidence.</p>
+            <p>Practice aloud or typed. Silverstone checks answer structure and clarity with a local rubric; its score is coaching feedback, not an AI hiring prediction.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span className={`readiness-gauge ${readinessClass}`}>
-              {readinessScore > 0 ? `${readinessScore}%` : '0%'} Readiness
+              {readinessScore > 0 ? `${readinessScore}% Readiness` : 'Not Assessed'}
             </span>
             <button className="icon-button" aria-label="Close interview practice" onClick={onClose}>
               <Icon name="close" size={17} />
@@ -1634,6 +1834,19 @@ Warm regards,
                       </span>
                     </div>
 
+                    {starStories.length > 0 && (
+                      <div className="practice-story-insert">
+                        <label className="field-label" htmlFor="practice-star-story">Use a saved STAR story as a starting point</label>
+                        <div>
+                          <select id="practice-star-story" value={selectedStoryId} onChange={(event) => setSelectedStoryId(event.target.value)}>
+                            <option value="">Choose a story…</option>
+                            {starStories.map((story) => <option key={story.id} value={story.id}>{story.title}</option>)}
+                          </select>
+                          <button className="button button-secondary" type="button" onClick={insertStarStory} disabled={!selectedStoryId}>Insert into answer</button>
+                        </div>
+                      </div>
+                    )}
+
                     <textarea
                       rows={6}
                       value={currentQ.userAnswer}
@@ -1642,18 +1855,13 @@ Warm regards,
                     />
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>
-                        <Icon name="shield" size={12} /> Local evaluation runs in this browser
-                      </span>
-                      <button
-                        type="button"
-                        className="button button-primary"
-                        onClick={handleAssess}
-                        disabled={!currentQ.userAnswer.trim()}
-                      >
-                        <Icon name="sparkle" size={14} /> Assess my answer
-                      </button>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}><Icon name="shield" size={12} /> Answers autosave locally · rubric runs here</span>
+                      <div className="practice-answer-actions">
+                        <button type="button" className="button button-secondary" onClick={() => onAddStudyCard(currentQ.question, currentQ.userAnswer, `${prep.roleTitle} interview`)} disabled={!currentQ.userAnswer.trim()}><Icon name="book" size={14} /> Save to Study</button>
+                        <button type="button" className="button button-primary" onClick={handleAssess} disabled={!currentQ.userAnswer.trim()}><Icon name="sparkle" size={14} /> Assess my answer</button>
+                      </div>
                     </div>
+                    <div className="practice-speech-note"><span className={`filler-badge ${fillerAnalysis.total ? 'has-fillers' : 'is-clean'}`}>{fillerAnalysis.total} filler word{fillerAnalysis.total === 1 ? '' : 's'} detected</span><span>Browser dictation may use your browser’s speech service; Silverstone does not save raw audio.</span></div>
                   </div>
 
                   {currentQ.score > 0 && (
@@ -1790,6 +1998,16 @@ Warm regards,
 
           {activeTab === 'cheatsheet' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="interview-checklist">
+                <div><strong>Before the interview</strong><small>A short checklist to close the gaps beyond question practice.</small></div>
+                {([
+                  ['researchedOrganization', `Review ${prep.company} and its recent work`],
+                  ['reviewedRoleRequirements', 'Re-read the role requirements and choose relevant examples'],
+                  ['preparedEvidenceStories', 'Prepare evidence-backed stories from your STAR bank'],
+                  ['checkedLogistics', 'Check the meeting link, location, time, and interviewer names'],
+                  ['preparedQuestions', 'Choose questions to ask the interview team'],
+                ] as const).map(([key, label]) => <label className="interview-check-item" key={key}><input type="checkbox" checked={preparationChecklist[key]} onChange={() => togglePreparationItem(key)} /><span>{label}</span></label>)}
+              </div>
               <div>
                 <strong style={{ fontSize: '12px', color: 'var(--ink)' }}>60-Second Elevator Pitch ("Tell Me About Yourself")</strong>
                 <p style={{ fontSize: '9px', color: 'var(--muted)', margin: '3px 0 8px' }}>
@@ -1797,8 +2015,13 @@ Warm regards,
                 </p>
                 <textarea
                   rows={3}
+                  maxLength={5000}
                   value={elevatorPitch}
-                  onChange={(e) => setElevatorPitch(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setElevatorPitch(value);
+                    onSave({ ...prep, questions, questionsToAsk, notes, elevatorPitch: value, preparationChecklist, readinessScore: calculateReadiness(questions) }, false);
+                  }}
                   placeholder="e.g. For the past 4 years I've specialized in high-performance distributed systems, recently scaling our checkout service to 45k QPS. I'm excited about Acme because..."
                 />
               </div>
@@ -1828,7 +2051,7 @@ Warm regards,
                   value={notes}
                   onChange={(e) => {
                     setNotes(e.target.value);
-                    onSave({ ...prep, notes: e.target.value });
+                    onSave({ ...prep, questions, questionsToAsk, notes: e.target.value, elevatorPitch, preparationChecklist, readinessScore: calculateReadiness(questions) }, false);
                   }}
                   placeholder="Record immediate impressions right after hanging up..."
                 />
@@ -2254,7 +2477,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -2268,8 +2491,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, recall cards, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, recall cards, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, recall cards, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, recall cards, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <CloudWorkspacePanel workspace={state} onRestore={onRestoreCloud} />
         <section className="panel settings-panel"><PanelHeading eyebrow="APP CONNECTIONS" title="External services" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>

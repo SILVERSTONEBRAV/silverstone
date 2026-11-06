@@ -69,10 +69,35 @@ export const DEFAULT_QUESTIONS_TO_ASK: Record<InterviewFormat, string[]> = {
   ],
 };
 
+export const COMMON_FILLER_WORDS = [
+  'um', 'uh', 'like', 'basically', 'actually', 'literally',
+  'you know', 'sort of', 'kind of', 'i mean', 'honestly',
+];
+
+export function analyzeFillerWords(text: string): { total: number; breakdown: Record<string, number> } {
+  const lower = text.toLowerCase();
+  const breakdown: Record<string, number> = {};
+  let total = 0;
+
+  for (const filler of COMMON_FILLER_WORDS) {
+    const escaped = filler.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    const matches = lower.match(regex);
+    if (matches && matches.length > 0) {
+      breakdown[filler] = matches.length;
+      total += matches.length;
+    }
+  }
+
+  return { total, breakdown };
+}
+
 export interface AssessmentResult {
   score: number;
   wordCount: number;
   estimatedDurationSeconds: number;
+  fillerCount: number;
+  fillerBreakdown: Record<string, number>;
   starCoverage: {
     situation: boolean;
     task: boolean;
@@ -88,8 +113,9 @@ export function assessInterviewAnswer(
   question: string,
   answer: string,
   category: InterviewAssessmentItem['category'],
-  _roleTitle = '',
+  roleTitle = '',
   _company = '',
+  focusContext = '',
 ): AssessmentResult {
   const clean = answer.trim();
   const words = clean.length > 0 ? clean.split(/\s+/).filter(Boolean) : [];
@@ -137,11 +163,19 @@ export function assessInterviewAnswer(
   // Check question relevance
   const questionWords = question.toLowerCase().split(/\s+/).filter((w) => w.length > 3 && !['what', 'when', 'tell', 'about', 'your', 'with', 'have', 'from', 'this', 'that'].includes(w));
   const matchesQuestionTheme = questionWords.some((w) => lower.includes(w));
+  const contextStopWords = new Set(['about', 'across', 'after', 'before', 'build', 'could', 'deliver', 'experience', 'focus', 'from', 'have', 'into', 'listed', 'manage', 'relevant', 'requirements', 'responsible', 'role', 'should', 'their', 'these', 'those', 'using', 'which', 'while', 'with', 'would', 'your']);
+  const contextTerms = `${roleTitle} ${focusContext}`.toLowerCase().match(/[a-z0-9+#.-]{5,}/g) ?? [];
+  const relevantTerms = [...new Set(contextTerms.filter((term) => !contextStopWords.has(term)))];
+  const matchedContextTerms = relevantTerms.filter((term) => lower.includes(term));
+  const connectsToContext = matchedContextTerms.length > 0;
 
   // Strengths identification
   const strengths: string[] = [];
   if (matchesQuestionTheme && count >= 35) {
     strengths.push('Directly connects to key concepts raised in the question prompt.');
+  }
+  if (connectsToContext) {
+    strengths.push('Connects an example to a role title, focus topic, or requirement entered for this interview.');
   }
   if (starCount >= 3) {
     strengths.push('Follows the structured STAR framework (Situation, Task, Action, Result).');
@@ -185,6 +219,22 @@ export function assessInterviewAnswer(
   if (!hasNumbers && (category === 'technical' || category === 'behavioral')) {
     improvements.push('Add specific numbers (e.g. latency reduced by X%, team size of Y, or shipped within Z weeks).');
   }
+  if (relevantTerms.length > 0 && !connectsToContext) {
+    improvements.push('Make the link between this example and one of the role requirements or focus topics explicit.');
+  }
+
+  // Check filler words
+  const { total: fillerCount, breakdown: fillerBreakdown } = analyzeFillerWords(clean);
+  if (fillerCount >= 3) {
+    const topFillers = Object.entries(fillerBreakdown)
+      .sort((a, b) => b[1] - a[1])
+      .map(([word, num]) => `"${word}" (${num}x)`)
+      .slice(0, 3)
+      .join(', ');
+    improvements.push(`Contains ${fillerCount} filler word${fillerCount === 1 ? '' : 's'} (${topFillers}). Practice pausing instead of speaking through silences.`);
+  } else if (count >= 40 && fillerCount === 0) {
+    strengths.push('Clean, deliberate verbal pacing with zero detected filler words.');
+  }
 
   // Calculate score (0 to 100)
   let baseScore = 45;
@@ -192,7 +242,10 @@ export function assessInterviewAnswer(
   if (count >= 70 && count <= 350) baseScore += 15;
   baseScore += starCount * 7;
   if (hasNumbers) baseScore += 6;
+  if (connectsToContext) baseScore += 4;
   if (iMatches >= 2) baseScore += 5;
+  if (fillerCount === 0 && count >= 40) baseScore += 4;
+  if (fillerCount >= 4) baseScore -= Math.min(12, fillerCount * 2);
   if (improvements.length === 0) baseScore += 5;
   if (count < 25) baseScore = Math.min(baseScore, 35);
   const score = Math.max(15, Math.min(98, baseScore));
@@ -211,6 +264,8 @@ export function assessInterviewAnswer(
     score,
     wordCount: count,
     estimatedDurationSeconds: estimatedSeconds,
+    fillerCount,
+    fillerBreakdown,
     starCoverage: {
       situation: hasSituation,
       task: hasTask,

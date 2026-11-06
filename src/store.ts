@@ -1,4 +1,4 @@
-import type { AgentTask, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession } from './types';
 
 const DATABASE_NAME = 'silverstone-local';
 const DATABASE_VERSION = 1;
@@ -59,7 +59,7 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 7,
+    version: 8,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
@@ -69,17 +69,18 @@ export function createInitialState(): LocalAppState {
     socialPosts: [],
     studyCards: [],
     interviewPreps: [],
+    starStories: [],
   };
 }
 
 function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown; interviewPreps?: unknown };
+  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown; interviewPreps?: unknown; starStories?: unknown };
   if (!Array.isArray(candidate.tasks) || !candidate.tasks.every(isAgentTask)
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 7,
+      version: 8,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
@@ -89,9 +90,10 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       socialPosts: [],
       studyCards: [],
       interviewPreps: [],
+      starStories: [],
     };
   }
-  if (![2, 3, 4, 5, 6, 7].includes(candidate.version as number) || !Array.isArray(candidate.studySessions)) return null;
+  if (![2, 3, 4, 5, 6, 7, 8].includes(candidate.version as number) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -106,12 +108,14 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!Array.isArray(projects) || !projects.every(isPortfolioProject)) return null;
   const careerOpportunities = candidate.version === 2 || candidate.version === 3 ? [] : candidate.careerOpportunities;
   if (!Array.isArray(careerOpportunities) || !careerOpportunities.every(isCareerOpportunity)) return null;
-  const socialPosts = candidate.version === 5 || candidate.version === 6 || candidate.version === 7 ? candidate.socialPosts : [];
+  const socialPosts = candidate.version === 5 || candidate.version === 6 || candidate.version === 7 || candidate.version === 8 ? candidate.socialPosts : [];
   if (!Array.isArray(socialPosts) || !socialPosts.every(isSocialPostDraft)) return null;
-  const studyCards = candidate.version === 6 || candidate.version === 7 ? candidate.studyCards : [];
+  const studyCards = candidate.version === 6 || candidate.version === 7 || candidate.version === 8 ? candidate.studyCards : [];
   if (!Array.isArray(studyCards) || !studyCards.every(isStudyCard)) return null;
-  const interviewPreps = candidate.version === 7 ? candidate.interviewPreps : [];
+  const interviewPreps = candidate.version === 7 || candidate.version === 8 ? candidate.interviewPreps : [];
   if (!Array.isArray(interviewPreps) || !interviewPreps.every(isInterviewPrep)) return null;
+  const starStories = candidate.version === 8 ? candidate.starStories : [];
+  if (!Array.isArray(starStories) || !starStories.every(isStarStory)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
     ? {
@@ -122,7 +126,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 7,
+    version: 8,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
@@ -132,6 +136,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     socialPosts,
     studyCards,
     interviewPreps,
+    starStories,
   };
 }
 
@@ -253,10 +258,17 @@ function isInterviewAssessmentItem(value: unknown): value is InterviewAssessment
     && categories.includes(item.category ?? '')
     && typeof item.userAnswer === 'string' && item.userAnswer.length <= 10000
     && typeof item.score === 'number' && Number.isFinite(item.score) && item.score >= 0 && item.score <= 100
+    && (item.starCoverage === undefined || (
+      typeof item.starCoverage === 'object' && item.starCoverage !== null
+      && typeof item.starCoverage.situation === 'boolean'
+      && typeof item.starCoverage.task === 'boolean'
+      && typeof item.starCoverage.action === 'boolean'
+      && typeof item.starCoverage.result === 'boolean'
+    ))
     && Array.isArray(item.strengths) && item.strengths.every((s) => typeof s === 'string')
     && Array.isArray(item.improvements) && item.improvements.every((s) => typeof s === 'string')
     && (item.suggestedPhrasing === undefined || typeof item.suggestedPhrasing === 'string')
-    && (item.assessedAt === undefined || typeof item.assessedAt === 'string');
+    && (item.assessedAt === undefined || (typeof item.assessedAt === 'string' && Number.isFinite(Date.parse(item.assessedAt))));
 }
 
 function isInterviewPrep(value: unknown): value is InterviewPrep {
@@ -276,10 +288,35 @@ function isInterviewPrep(value: unknown): value is InterviewPrep {
     && typeof prep.jobContext === 'string' && prep.jobContext.length <= 10000
     && Array.isArray(prep.questions) && prep.questions.every(isInterviewAssessmentItem)
     && Array.isArray(prep.questionsToAsk) && prep.questionsToAsk.every((q) => typeof q === 'string')
+    && (prep.preparationChecklist === undefined || (
+      typeof prep.preparationChecklist === 'object' && prep.preparationChecklist !== null
+      && typeof prep.preparationChecklist.researchedOrganization === 'boolean'
+      && typeof prep.preparationChecklist.reviewedRoleRequirements === 'boolean'
+      && typeof prep.preparationChecklist.preparedEvidenceStories === 'boolean'
+      && typeof prep.preparationChecklist.checkedLogistics === 'boolean'
+      && typeof prep.preparationChecklist.preparedQuestions === 'boolean'
+    ))
     && typeof prep.notes === 'string' && prep.notes.length <= 10000
+    && (prep.elevatorPitch === undefined || (typeof prep.elevatorPitch === 'string' && prep.elevatorPitch.length <= 5000))
     && typeof prep.readinessScore === 'number' && Number.isFinite(prep.readinessScore)
     && typeof prep.createdAt === 'string' && Number.isFinite(Date.parse(prep.createdAt))
     && typeof prep.updatedAt === 'string' && Number.isFinite(Date.parse(prep.updatedAt));
+}
+
+function isStarStory(value: unknown): value is StarStory {
+  if (!value || typeof value !== 'object') return false;
+  const story = value as Partial<StarStory>;
+  return typeof story.id === 'string'
+    && typeof story.title === 'string' && story.title.trim().length > 0 && story.title.length <= 160
+    && Array.isArray(story.competencies) && story.competencies.length <= 12 && story.competencies.every((c) => typeof c === 'string' && c.length <= 100)
+    && typeof story.situation === 'string' && story.situation.length <= 5000
+    && typeof story.task === 'string' && story.task.length <= 5000
+    && typeof story.action === 'string' && story.action.length <= 10000
+    && typeof story.result === 'string' && story.result.length <= 5000
+    && typeof story.metrics === 'string' && story.metrics.length <= 1000
+    && (story.lastUsedAt === undefined || (typeof story.lastUsedAt === 'string' && Number.isFinite(Date.parse(story.lastUsedAt))))
+    && typeof story.createdAt === 'string' && Number.isFinite(Date.parse(story.createdAt))
+    && typeof story.updatedAt === 'string' && Number.isFinite(Date.parse(story.updatedAt));
 }
 
 export function createWorkspaceBackup(state: LocalAppState): string {

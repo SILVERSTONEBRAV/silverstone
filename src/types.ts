@@ -112,6 +112,14 @@ export interface SocialPostDraft {
 
 export type InterviewFormat = 'Screening' | 'Technical' | 'Behavioral' | 'System Design' | 'Hiring Manager' | 'Case Study';
 
+export interface InterviewPreparationChecklist {
+  researchedOrganization: boolean;
+  reviewedRoleRequirements: boolean;
+  preparedEvidenceStories: boolean;
+  checkedLogistics: boolean;
+  preparedQuestions: boolean;
+}
+
 export interface InterviewAssessmentItem {
   id: string;
   question: string;
@@ -143,14 +151,30 @@ export interface InterviewPrep {
   jobContext: string;
   questions: InterviewAssessmentItem[];
   questionsToAsk: string[];
+  preparationChecklist?: InterviewPreparationChecklist;
   notes: string;
+  elevatorPitch?: string;
   readinessScore: number;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface StarStory {
+  id: string;
+  title: string;
+  competencies: string[];
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  metrics: string;
+  lastUsedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LocalAppState {
-  version: 7;
+  version: 8;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
@@ -160,4 +184,5 @@ export interface LocalAppState {
   socialPosts: SocialPostDraft[];
   studyCards: StudyCard[];
   interviewPreps: InterviewPrep[];
+  starStories: StarStory[];
 }
