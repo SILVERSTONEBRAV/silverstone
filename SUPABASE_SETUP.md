@@ -1,12 +1,12 @@
 # Supabase setup for Silverstone
 
-**Current prototype:** Silverstone keeps its working workspace in IndexedDB and offers optional Supabase sign-in plus explicit **Create cloud copy**, **Replace cloud copy**, and **Restore to this device** actions. This copies the complete JSON workspace rather than synchronizing individual records.
+**Current prototype:** Silverstone keeps its working workspace in IndexedDB and offers optional Supabase sign-in plus explicit per-record **Create cloud records**, **Replace cloud records**, and **Restore to this device** actions. Sync is user-triggered and replaces the online record set atomically; automatic background sync and conflict merging are not implemented.
 
-**Draft boundary:** Earlier deployed versions uploaded the entire JSON workspace, including email reply, application, portfolio, and social drafts. The current branch excludes those four draft collections during cloud upload and preserves each device's own drafts on restore. Deploy this update before using cloud copy. If an older cloud row contains drafts, replace it from an updated device to overwrite those fields with empty collections; the relational cloud-first sync is still planned.
+**Draft boundary:** Earlier deployed versions uploaded the entire JSON workspace, including email reply, application, portfolio, and social drafts. Per-record sync excludes those four collections and preserves each device's own drafts on restore. The first successful per-record replacement also clears those draft collections from the legacy JSON row. Existing records in an older copy are not merged automatically; restore that copy to a device before replacing it if it contains changes you need.
 
 ## 1. Create the bootstrap workspace table
 
-Open the Supabase project’s **SQL Editor** and run [`supabase/migrations/202611060001_workspace_cloud_copy.sql`](supabase/migrations/202611060001_workspace_cloud_copy.sql). It creates one JSONB workspace row per authenticated user, enables RLS, and adds the revision-checked save function used by Silverstone.
+Open the Supabase project’s **SQL Editor** and run [`supabase/migrations/202611060001_workspace_cloud_copy.sql`](supabase/migrations/202611060001_workspace_cloud_copy.sql). It creates the legacy JSONB workspace row and its revision-checked save function, which older builds used and which the current build reads only as a compatibility source during migration.
 
 The function is `SECURITY INVOKER`; table grants and RLS continue to apply. Only the signed-in owner can read or write their own row. No anonymous access or client-side delete permission is granted.
 
@@ -16,7 +16,13 @@ After migration `202611060001_workspace_cloud_copy.sql`, run [`supabase/migratio
 
 Every private table has RLS policies scoped to the signed-in owner. The portfolio-publication table is the only table with anonymous read access, and it contains published content only; public clients can query its content columns but cannot read the owner ID or write rows. Email connection/message metadata and portfolio publications are writable only by the trusted `service_role`, so future OAuth and publication flows must go through the server-side API and its approval checks. Unsent email replies, application drafts, portfolio drafts, social drafts, email bodies, and OAuth tokens are not stored in these tables. Provider tokens belong in encrypted server-side storage.
 
-This migration prepares the schema but does **not** switch the current app to automatic per-record sync or copy existing JSONB workspace data into the new tables. The Settings screen still uses the manual workspace-copy table until the sync adapter is implemented. Existing rows in `silverstone_workspaces` are not modified by this migration.
+This migration prepares the tables but does not add the record-sync RPCs or migrate the old JSONB row. Continue with the next migration before using the current Settings sync controls.
+
+## 1b. Add atomic record sync
+
+Run [`supabase/migrations/202611060003_record_sync_protocol.sql`](supabase/migrations/202611060003_record_sync_protocol.sql) after migration 002. It adds a per-account sync revision and two RPCs: a read-only `SECURITY INVOKER` reader and a narrowly scoped `SECURITY DEFINER` replacement function with a fixed search path and authenticated-user check. Browser clients can read their rows but cannot write the records or revision table directly; writes go through the atomic replacement function, which rejects stale revisions. The first successful replacement also clears old draft collections from the compatibility JSON row.
+
+The UI's **Replace cloud records** action replaces the full online set, including removals, after confirmation. It is not an automatic offline outbox: until background sync and a merge/conflict interface ship, sync manually after changes and refresh before replacing if another device may have changed the cloud set.
 
 ## 2. Create the account and configure email links
 
@@ -69,8 +75,8 @@ Do not create these until the server-side integration is implemented. The recomm
 
 Gmail access is OAuth, not a Gmail password or an API key. The consent screen must request only the scopes needed for reading and sending; Google's Gmail scopes have different sensitivity and verification requirements ([scope guide](https://developers.google.com/workspace/gmail/api/auth/scopes)). OAuth refresh tokens belong in encrypted server-side storage, not Vercel environment variables or browser storage. If we keep the Rust service on a separate host, set its provider/model secrets there. Never send secrets in chat; add them directly in the deployment dashboard.
 
-## 5. Use the cloud copy
+## 5. Use cloud records
 
-In Silverstone, open **Settings → Supabase online workspace**, sign in, and choose **Create cloud copy** to upload online workspace records. The current build excludes email, application, portfolio, and social drafts, and a restore preserves drafts already on that device. Replacing a cloud copy and restoring online records both ask first. If another device updated the row since it was loaded, refresh before uploading again.
+In Silverstone, open **Settings → Supabase online workspace**, sign in, and choose **Create cloud records** to upload non-draft records one row per item. The UI excludes email, application, portfolio, and social drafts, and a restore preserves drafts already on that device. Replacing records removes cloud records absent from this device, so review the confirmation and refresh before syncing if another device may have changed the set. If an older JSON cloud copy is detected, restore it first if it contains changes not present on this device.
 
 The current integration is manual and user-scoped. Automatic cloud-first sync, relational record storage, device-only draft isolation, merge/conflict resolution, provider OAuth, portfolio publishing, and server-side AI/vision jobs are later milestones. Before wiring the live portfolio site, inspect its source repository and add only read access to published content on the public site; never expose a server secret there.

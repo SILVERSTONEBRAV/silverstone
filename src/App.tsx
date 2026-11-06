@@ -969,7 +969,7 @@ function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocu
           <div className="observation-top"><span className="observation-icon"><Icon name="scan" size={17} /></span><span className="status-pill status-off"><span /> OFF</span></div>
           <p className="eyebrow">YOUR CONTEXT, YOUR CHOICE</p>
           <h3>Observation is<br />paused.</h3>
-          <p className="observation-description">No observation sources or device sensors are connected. Your workspace cloud copy is separate from observation.</p>
+          <p className="observation-description">No observation sources or device sensors are connected. The cloud can store derived notes later, but it does not activate or monitor any sensor.</p>
           <button className="observation-link" onClick={() => onNavigate('observation')}>Explore permissions <Icon name="arrow" size={15} /></button>
           <div className="observation-grid" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
         </section>
@@ -1604,7 +1604,7 @@ function CareerEvidenceLibrary({ evidence, onCreate, onEdit, onDelete }: {
           )) : <div className="evidence-empty"><span className="empty-icon"><Icon name={normalizedQuery || filter !== 'all' ? 'search' : 'library'} /></span><strong>{evidence.length ? 'No records match this view.' : 'Build your verified profile.'}</strong><span>{evidence.length ? 'Try another search or filter.' : 'Save facts about your experience, education, skills, projects, and achievements with a source you can check later.'}</span>{!evidence.length && <button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={14} /> Add your first record</button>}</div>}
         </div>
       </section>
-      <section className="module-note"><Icon name="shield" size={16} /><span>Verification is your confirmation that the source supports the record. Silverstone does not generate or independently verify these facts. Records stay in your local workspace unless you explicitly create a cloud copy.</span></section>
+      <section className="module-note"><Icon name="shield" size={16} /><span>Verification is your confirmation that the source supports the record. Silverstone does not generate or independently verify these facts. Career records stay on this device until you sync them from Settings.</span></section>
     </div>
   );
 }
@@ -2796,7 +2796,7 @@ function EmailDesk({ emails, onCreate, onEdit, onDelete, onToast }: { emails: Em
           )) : <div className="email-desk-empty"><span className="empty-icon"><Icon name={emails.length ? 'search' : 'inbox'} /></span><strong>{emails.length ? 'No emails match these filters.' : 'No emails saved here yet.'}</strong><span>{emails.length ? 'Try another search or filter.' : 'Paste a selected message when you want help organizing it or preparing a reply.'}</span>{!emails.length && <button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={14} /> Add a message</button>}</div>}
         </div>
       </section>
-      <section className="module-note email-privacy-note"><Icon name="shield" size={16} /><span>Messages and drafts stay in this browser unless you explicitly create a cloud copy. Browser storage and backups are not encrypted. This inbox is not connected to an email account; Silverstone never sends these drafts.</span></section>
+      <section className="module-note email-privacy-note"><Icon name="shield" size={16} /><span>Selected messages and reply drafts stay in this browser and are excluded from cloud sync. Browser storage and backups are not encrypted. This inbox is not connected to an email account; Silverstone never sends these drafts.</span></section>
     </div>
   );
 }
@@ -3024,10 +3024,11 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
 
   async function uploadLocalWorkspace() {
     if (!snapshot || !cloudApi) return;
-    const replaces = snapshot.workspace !== null;
-    const prompt = replaces
-      ? 'Replace the online workspace records from this device? The upload excludes email, application, portfolio, and social drafts; the other online records will be overwritten.'
-      : 'Create your first online workspace copy? This uploads online workspace records but excludes email, application, portfolio, and social drafts.';
+    const prompt = snapshot.source === 'records'
+      ? 'Replace the entire online record set from this device? This also removes online records deleted on this device. Email, application, portfolio, and social drafts remain local.'
+      : snapshot.source === 'legacy'
+        ? 'Write this device’s non-draft records into the new per-record cloud store? This does not merge other changes from the older JSON copy. Device-only drafts stay here, and the old copy’s draft collections will be cleared.'
+        : 'Create your first per-record online set from this device? Email, application, portfolio, and social drafts stay local.';
     if (!window.confirm(prompt)) return;
     setBusy(true);
     setError('');
@@ -3042,11 +3043,11 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
       };
       await cloudApi.saveCloudWorkspace(onlineWorkspace, snapshot.revision);
       setSnapshot(await cloudApi.loadCloudWorkspace());
-      setMessage('Online workspace records saved. Device-only drafts were excluded.');
+      setMessage('Per-record cloud set saved. Device-only drafts were excluded.');
     } catch (reason) {
       const detail = reason instanceof Error ? reason.message : 'Could not save to Supabase.';
       setError(detail);
-      if (detail.includes('changed since it was loaded')) {
+      if (detail.includes('changed since they were loaded')) {
         try { setSnapshot(await cloudApi.loadCloudWorkspace()); } catch { /* Keep the conflict message visible. */ }
       }
     } finally {
@@ -3061,7 +3062,7 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
     setError('');
     try {
       await onRestore(snapshot.workspace);
-      setMessage('Cloud copy restored to this device.');
+      setMessage('Cloud records restored to this device.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not restore the cloud copy.');
     } finally {
@@ -3091,18 +3092,18 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
       <PanelHeading eyebrow="SUPABASE ONLINE WORKSPACE" title="Keep account records available online" />
       {!supabaseConfigured ? <div className="cloud-not-configured"><span className="connection-lock"><Icon name="cloud" size={18} /></span><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to your local environment and Vercel project settings, then redeploy.</p></div> : user ? <>
         <div className="cloud-user-row"><span><strong>{user.email ?? 'Signed-in account'}</strong><small>Signed in · device-only drafts are kept separate</small></span><button className="text-action" onClick={signOut} disabled={busy}>Sign out</button></div>
-        <div className="cloud-info-card"><span className="local-data-icon"><Icon name="shield" size={16} /></span><span><strong>Private, manual online copy</strong><small>Only this account can access its row. Upload and restore are explicit; email, application, portfolio, and social drafts stay on this device. Automatic sync is not implemented yet.</small></span></div>
-        {snapshot === undefined ? <p className="cloud-state-copy">Checking your Supabase workspace…</p> : <div className="cloud-snapshot-row"><span><strong>{snapshot.workspace ? 'Cloud copy found' : 'No cloud copy yet'}</strong><small>{snapshot.workspace ? `Revision ${snapshot.revision} · updated ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(snapshot.updatedAt ?? ''))}` : 'Create one from this device when you are ready.'}</small></span><button className="button button-secondary" onClick={refreshCloud} disabled={busy}><Icon name="reset" size={14} /> Refresh</button></div>}
-        <div className="cloud-actions"><button className="button button-primary" onClick={uploadLocalWorkspace} disabled={busy || snapshot === undefined}><Icon name="cloud" size={15} /> {snapshot?.workspace ? 'Replace cloud copy' : 'Create cloud copy'}</button>{snapshot?.workspace && <button className="button button-secondary" onClick={restoreCloudCopy} disabled={busy}><Icon name="download" size={14} /> Restore to this device</button>}<button className="button button-secondary" onClick={registerPasskey} disabled={busy}><Icon name="shield" size={14} /> Add a passkey</button></div>
+        <div className="cloud-info-card"><span className="local-data-icon"><Icon name="shield" size={16} /></span><span><strong>Private per-record cloud data</strong><small>Sync is currently user-triggered and replaces the account’s online record set atomically. Drafts stay on this device; automatic background sync and cross-device conflict resolution are still to come.</small></span></div>
+        {snapshot === undefined ? <p className="cloud-state-copy">Checking your Supabase records…</p> : <div className="cloud-snapshot-row"><span><strong>{snapshot.source === 'records' ? 'Per-record cloud data found' : snapshot.source === 'legacy' ? 'Older cloud copy detected' : 'No cloud records yet'}</strong><small>{snapshot.source === 'records' ? `Revision ${snapshot.revision}${snapshot.updatedAt ? ` · synced ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(snapshot.updatedAt))}` : ''}` : snapshot.source === 'legacy' ? 'Save this device’s records to move them into the new schema.' : 'Create the first record set from this device.'}</small></span><button className="button button-secondary" onClick={refreshCloud} disabled={busy}><Icon name="reset" size={14} /> Refresh</button></div>}
+        <div className="cloud-actions"><button className="button button-primary" onClick={uploadLocalWorkspace} disabled={busy || snapshot === undefined}><Icon name="cloud" size={15} /> {snapshot?.source === 'records' ? 'Replace cloud records' : snapshot?.source === 'legacy' ? 'Save records to new store' : 'Create cloud records'}</button>{snapshot?.workspace && <button className="button button-secondary" onClick={restoreCloudCopy} disabled={busy}><Icon name="download" size={14} /> Restore to this device</button>}<button className="button button-secondary" onClick={registerPasskey} disabled={busy}><Icon name="shield" size={14} /> Add a passkey</button></div>
         <p className="cloud-passkey-note">Passkeys use your device’s biometric, PIN, or security key. Supabase stores the public credential; it does not receive your fingerprint or face data.</p>
       </> : <>
-        <div className="cloud-not-configured cloud-auth-intro"><span className="connection-lock"><Icon name="shield" size={18} /></span><p>Sign in to access your private cloud copy. First sign in with an existing account, then you can register a device passkey for future sign-ins.</p></div>
+        <div className="cloud-not-configured cloud-auth-intro"><span className="connection-lock"><Icon name="shield" size={18} /></span><p>Sign in to access your private cloud records. First sign in with an existing account, then you can register a device passkey for future sign-ins.</p></div>
         <button className="button button-primary cloud-passkey-signin" onClick={signInWithPasskey} disabled={busy || !cloudClient}><Icon name="shield" size={15} /> Sign in with a passkey</button>
         <form className="cloud-email-form" onSubmit={sendSignInLink}><label className="field-label" htmlFor="cloud-signin-email">Or use your account email</label><div><input id="cloud-signin-email" type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /><button className="button button-secondary" type="submit" disabled={busy || !cloudClient || !email.trim()}>Email sign-in link</button></div></form>
       </>}
       {error && <p className="cloud-feedback cloud-error" role="alert">{error}</p>}
       {message && <p className="cloud-feedback cloud-success" role="status">{message}</p>}
-      <small className="cloud-footer-note">This prototype manually copies online workspace records. Device-only drafts are excluded; automatic sync and conflict resolution are still planned.</small>
+      <small className="cloud-footer-note">Apply Supabase migrations 001, 002, and 003 before using record sync. Local changes do not reach the cloud until you choose a sync action.</small>
     </section>
   );
 }

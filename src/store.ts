@@ -23,44 +23,13 @@ interface WorkspaceBackup {
   state: LocalAppState;
 }
 
-const sampleTasks: AgentTask[] = [
-  {
-    id: 'task-study-1',
-    title: 'Complete the ownership practice set',
-    category: 'Study',
-    dueLabel: '10:30 AM',
-    done: false,
-  },
-  {
-    id: 'task-career-1',
-    title: 'Review fellowship essay draft',
-    category: 'Career',
-    dueLabel: 'Today',
-    done: false,
-  },
-  {
-    id: 'task-portfolio-1',
-    title: 'Add the results section to my case study',
-    category: 'Portfolio',
-    dueLabel: 'Today',
-    done: false,
-  },
-  {
-    id: 'task-personal-1',
-    title: 'Send the reading list to Sam',
-    category: 'Personal',
-    dueLabel: 'Tomorrow',
-    done: true,
-  },
-];
-
 let databasePromise: Promise<IDBDatabase> | null = null;
 let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
     version: 13,
-    tasks: sampleTasks,
+    tasks: [],
     captures: [],
     studyGoal: null,
     studySessions: [],
