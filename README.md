@@ -26,7 +26,7 @@ See [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for the Supabase SQL migration, Verce
 
 - **Today:** agenda, priorities, open-time suggestions, reminders, and daily check-in.
 - **Study:** goals, study blocks, notes, quizzes, revision, and progress.
-- **Career:** job and scholarship tracking, interview details and mock practice, local answer feedback, a reusable STAR story bank, a prep checklist, and follow-up notes. CV/essay generation and connected application flows remain planned work.
+- **Career:** job and scholarship tracking, a local career evidence library with user-confirmed source checks, interview Learn and Q&A modes, local answer feedback, a reusable STAR story bank, a prep checklist, and follow-up notes. CV/essay generation and connected application flows remain planned work.
 - **Portfolio:** project records, case studies, draft updates, previews, and publishing history.
 - **Studio:** social content drafts, platform previews, approvals, scheduling, post status, and available insights.
 - **Capture and Library:** text, voice, images, links, files, extracted metadata, and searchable personal knowledge.

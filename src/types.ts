@@ -173,8 +173,25 @@ export interface StarStory {
   updatedAt: string;
 }
 
+export type CareerEvidenceKind = 'Experience' | 'Education' | 'Skill' | 'Achievement' | 'Project' | 'Credential';
+
+export interface CareerEvidence {
+  id: string;
+  kind: CareerEvidenceKind;
+  title: string;
+  organization: string;
+  timeframe: string;
+  details: string;
+  skills: string[];
+  sourceLabel: string;
+  sourceUrl: string;
+  verifiedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LocalAppState {
-  version: 8;
+  version: 9;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
@@ -185,4 +202,5 @@ export interface LocalAppState {
   studyCards: StudyCard[];
   interviewPreps: InterviewPrep[];
   starStories: StarStory[];
+  careerEvidence: CareerEvidence[];
 }

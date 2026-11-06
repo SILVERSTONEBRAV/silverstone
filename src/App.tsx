@@ -3,7 +3,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
-import type { AgentTask, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 import { DEFAULT_QUESTIONS_BY_FORMAT, DEFAULT_QUESTIONS_TO_ASK, INTERVIEW_FORMATS, analyzeFillerWords, assessInterviewAnswer, calculateReadiness } from './interview';
 
@@ -103,6 +103,7 @@ function App() {
   const [studyCardEditor, setStudyCardEditor] = useState<StudyCard | null | undefined>(undefined);
   const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
   const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
+  const [evidenceEditor, setEvidenceEditor] = useState<CareerEvidence | null | undefined>(undefined);
   const [interviewEditor, setInterviewEditor] = useState<{ prep: InterviewPrep | null; opportunityId?: string } | undefined>(undefined);
   const [interviewPractice, setInterviewPractice] = useState<InterviewPrep | undefined>(undefined);
   const [storyEditor, setStoryEditor] = useState<StarStory | null | undefined>(undefined);
@@ -306,6 +307,44 @@ function App() {
     setToast('Opportunity saved locally');
   }
 
+  function saveCareerEvidence(draft: { id?: string; kind: CareerEvidenceKind; title: string; organization: string; timeframe: string; details: string; skills: string[]; sourceLabel: string; sourceUrl: string; verified: boolean }) {
+    const updatedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.careerEvidence.find((item) => item.id === draft.id);
+      const { verified, ...fields } = draft;
+      const unchanged = Boolean(existing
+        && existing.kind === draft.kind
+        && existing.title === draft.title
+        && existing.organization === draft.organization
+        && existing.timeframe === draft.timeframe
+        && existing.details === draft.details
+        && existing.skills.join('\u0000') === draft.skills.join('\u0000')
+        && existing.sourceLabel === draft.sourceLabel
+        && existing.sourceUrl === draft.sourceUrl);
+      const evidence: CareerEvidence = {
+        ...fields,
+        id: existing?.id ?? createId('career-evidence'),
+        verifiedAt: verified ? (unchanged && existing?.verifiedAt ? existing.verifiedAt : updatedAt) : '',
+        createdAt: existing?.createdAt ?? updatedAt,
+        updatedAt,
+      };
+      const careerEvidence = existing
+        ? current.careerEvidence.map((item) => item.id === existing.id ? evidence : item)
+        : [evidence, ...current.careerEvidence];
+      return { ...current, careerEvidence };
+    });
+    setEvidenceEditor(undefined);
+    setToast(draft.id ? 'Evidence record updated' : 'Evidence record added');
+  }
+
+  function deleteCareerEvidence(id: string) {
+    setAppState((current) => ({
+      ...current,
+      careerEvidence: current.careerEvidence.filter((item) => item.id !== id),
+    }));
+    setToast('Evidence record removed');
+  }
+
   function saveInterviewPrep(prep: InterviewPrep, showToast = true) {
     const updatedAt = new Date().toISOString();
     setAppState((current) => {
@@ -464,7 +503,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 8, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [] });
+      setAppState({ version: 9, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -555,6 +594,9 @@ function App() {
               onCreateStory={() => setStoryEditor(null)}
               onEditStory={setStoryEditor}
               onDeleteStory={deleteStarStory}
+              onCreateEvidence={() => setEvidenceEditor(null)}
+              onEditEvidence={setEvidenceEditor}
+              onDeleteEvidence={deleteCareerEvidence}
               onCreateSocialPost={() => setSocialEditor(null)}
               onEditSocialPost={setSocialEditor}
             />
@@ -588,6 +630,7 @@ function App() {
       {studyCardEditor !== undefined && <StudyCardDialog current={studyCardEditor} defaultTopic={appState.studyGoal?.topic ?? ''} onSave={saveStudyCard} onClose={() => setStudyCardEditor(undefined)} />}
       {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
       {careerEditor !== undefined && <CareerOpportunityDialog current={careerEditor} onSave={saveCareerOpportunity} onClose={() => setCareerEditor(undefined)} />}
+      {evidenceEditor !== undefined && <CareerEvidenceDialog current={evidenceEditor} onSave={saveCareerEvidence} onClose={() => setEvidenceEditor(undefined)} />}
       {interviewEditor !== undefined && (
         <InterviewPrepDialog
           current={interviewEditor.prep}
@@ -920,7 +963,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateStory, onEditStory, onDeleteStory, onCreateSocialPost, onEditSocialPost }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateStory, onEditStory, onDeleteStory, onCreateEvidence, onEditEvidence, onDeleteEvidence, onCreateSocialPost, onEditSocialPost }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -943,6 +986,9 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onCreateStory: () => void;
   onEditStory: (story: StarStory) => void;
   onDeleteStory: (id: string) => void;
+  onCreateEvidence: () => void;
+  onEditEvidence: (evidence: CareerEvidence) => void;
+  onDeleteEvidence: (id: string) => void;
   onCreateSocialPost: () => void;
   onEditSocialPost: (post: SocialPostDraft) => void;
 }) {
@@ -962,6 +1008,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
           opportunities={state.careerOpportunities}
           interviewPreps={state.interviewPreps}
           starStories={state.starStories}
+          careerEvidence={state.careerEvidence}
           onCreate={onCreateOpportunity}
           onEdit={onEditOpportunity}
           onCreateInterview={onCreateInterview}
@@ -971,6 +1018,9 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
           onCreateStory={onCreateStory}
           onEditStory={onEditStory}
           onDeleteStory={onDeleteStory}
+          onCreateEvidence={onCreateEvidence}
+          onEditEvidence={onEditEvidence}
+          onDeleteEvidence={onDeleteEvidence}
         />
       )}
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
@@ -1045,10 +1095,15 @@ function CareerModule({
   onCreateStory,
   onEditStory,
   onDeleteStory,
+  careerEvidence,
+  onCreateEvidence,
+  onEditEvidence,
+  onDeleteEvidence,
 }: {
   opportunities: CareerOpportunity[];
   interviewPreps: InterviewPrep[];
   starStories: StarStory[];
+  careerEvidence: CareerEvidence[];
   onCreate: () => void;
   onEdit: (opportunity: CareerOpportunity) => void;
   onCreateInterview: (opportunityId?: string) => void;
@@ -1058,8 +1113,11 @@ function CareerModule({
   onCreateStory: () => void;
   onEditStory: (story: StarStory) => void;
   onDeleteStory: (id: string) => void;
+  onCreateEvidence: () => void;
+  onEditEvidence: (evidence: CareerEvidence) => void;
+  onDeleteEvidence: (id: string) => void;
 }) {
-  const [tab, setTab] = useState<'pipeline' | 'interviews'>('pipeline');
+  const [tab, setTab] = useState<'pipeline' | 'interviews' | 'evidence'>('pipeline');
   const activeOpportunities = opportunities.filter((item) => item.stage !== 'Closed');
   const thisMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const dueThisMonth = activeOpportunities.filter((item) => item.deadline.startsWith(thisMonth)).length;
@@ -1088,6 +1146,13 @@ function CareerModule({
           onClick={() => setTab('interviews')}
         >
           <Icon name="target" size={15} /> Interview Prep & Assessment ({interviewPreps.length})
+        </button>
+        <button
+          type="button"
+          className={`subnav-btn ${tab === 'evidence' ? 'is-active' : ''}`}
+          onClick={() => setTab('evidence')}
+        >
+          <Icon name="library" size={15} /> Evidence Library ({careerEvidence.length})
         </button>
       </div>
 
@@ -1159,7 +1224,7 @@ function CareerModule({
             </div>
           </section>
         </>
-      ) : (
+      ) : tab === 'interviews' ? (
         <>
           <section className="module-stats">
             <MiniStat value={String(interviewPreps.length)} label="Interviews tracked" icon="briefcase" />
@@ -1223,7 +1288,7 @@ function CareerModule({
             </div>
           </section>
         </>
-      )}
+      ) : <CareerEvidenceLibrary evidence={careerEvidence} onCreate={onCreateEvidence} onEdit={onEditEvidence} onDelete={onDeleteEvidence} />}
 
       <section className="panel module-panel story-bank-panel">
         <PanelHeading eyebrow="REUSABLE INTERVIEW EVIDENCE" title="Your STAR story bank" action="Add a story" onAction={onCreateStory} />
@@ -1257,6 +1322,122 @@ function CareerModule({
       <section className="module-cards">
         <MiniInfoCard icon="target" title="STAR Method evaluation" body="Practice framing behavioral answers with Situation, Task, Action, and measurable Results." />
         <MiniInfoCard icon="sparkle" title="Questions for the team" body="Prepare thoughtful reverse-interview questions about tech debt, culture, and first 90 days." />
+      </section>
+    </div>
+  );
+}
+
+function CareerEvidenceLibrary({ evidence, onCreate, onEdit, onDelete }: {
+  evidence: CareerEvidence[];
+  onCreate: () => void;
+  onEdit: (evidence: CareerEvidence) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'verified' | 'review'>('all');
+  const verifiedCount = evidence.filter((item) => Boolean(item.verifiedAt)).length;
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = [...evidence]
+    .filter((item) => filter === 'all' || (filter === 'verified' ? Boolean(item.verifiedAt) : !item.verifiedAt))
+    .filter((item) => !normalizedQuery || [item.title, item.organization, item.details, item.sourceLabel, item.sourceUrl, ...item.skills].join(' ').toLowerCase().includes(normalizedQuery))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+  return (
+    <div className="evidence-library">
+      <section className="module-stats">
+        <MiniStat value={String(evidence.length)} label="Facts and records" icon="library" />
+        <MiniStat value={String(verifiedCount)} label="Verified by you" icon="check" />
+        <MiniStat value={String(evidence.length - verifiedCount)} label="Need a source check" icon="shield" />
+      </section>
+      <section className="panel module-panel evidence-panel">
+        <PanelHeading eyebrow="USER-CHECKED CAREER FACTS" title="Evidence library" action="Add a record" onAction={onCreate} />
+        <div className="evidence-toolbar">
+          <label className="sr-only" htmlFor="career-evidence-search">Search career evidence</label>
+          <div className="evidence-search"><Icon name="search" size={14} /><input id="career-evidence-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roles, skills, projects, sources…" /></div>
+          <div className="segmented-control" aria-label="Filter evidence by verification">
+            <button className={filter === 'all' ? 'selected' : ''} onClick={() => setFilter('all')}>All</button>
+            <button className={filter === 'verified' ? 'selected' : ''} onClick={() => setFilter('verified')}>Verified</button>
+            <button className={filter === 'review' ? 'selected' : ''} onClick={() => setFilter('review')}>Needs review</button>
+          </div>
+        </div>
+        <div className="evidence-list">
+          {filtered.length ? filtered.map((item) => (
+            <article className="evidence-card" key={item.id}>
+              <div className="evidence-card-top">
+                <span className={`evidence-kind evidence-kind-${item.kind.toLowerCase()}`}>{item.kind}</span>
+                <span className={`evidence-status ${item.verifiedAt ? 'evidence-is-verified' : 'evidence-needs-review'}`}><Icon name={item.verifiedAt ? 'check' : 'clock'} size={12} />{item.verifiedAt ? 'Verified by you' : 'Needs review'}</span>
+              </div>
+              <h4>{item.title}</h4>
+              <div className="evidence-meta">{item.organization && <span>{item.organization}</span>}{item.timeframe && <span>{item.timeframe}</span>}{item.verifiedAt && <span>Checked {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(item.verifiedAt))}</span>}</div>
+              {item.details && <p className="evidence-details">{item.details}</p>}
+              {item.skills.length > 0 && <div className="competency-tags">{item.skills.map((skill) => <span className="competency-pill" key={skill}>{skill}</span>)}</div>}
+              <div className="evidence-card-footer">
+                {item.sourceLabel || item.sourceUrl ? <span className="evidence-source"><Icon name="file" size={13} />{item.sourceUrl ? <a href={item.sourceUrl} target="_blank" rel="noreferrer">{item.sourceLabel || 'Open source'} <Icon name="external" size={11} /></a> : item.sourceLabel}</span> : <span className="evidence-source evidence-no-source">No source recorded</span>}
+                <div><button className="text-action" onClick={() => onEdit(item)}>Edit</button><button className="text-action evidence-remove" onClick={() => { if (window.confirm(`Remove “${item.title}” from your career evidence library?`)) onDelete(item.id); }}>Remove</button></div>
+              </div>
+            </article>
+          )) : <div className="evidence-empty"><span className="empty-icon"><Icon name={normalizedQuery || filter !== 'all' ? 'search' : 'library'} /></span><strong>{evidence.length ? 'No records match this view.' : 'Build your verified profile.'}</strong><span>{evidence.length ? 'Try another search or filter.' : 'Save facts about your experience, education, skills, projects, and achievements with a source you can check later.'}</span>{!evidence.length && <button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={14} /> Add your first record</button>}</div>}
+        </div>
+      </section>
+      <section className="module-note"><Icon name="shield" size={16} /><span>Verification is your confirmation that the source supports the record. Silverstone does not generate or independently verify these facts. Records stay in your local workspace unless you explicitly create a cloud copy.</span></section>
+    </div>
+  );
+}
+
+function CareerEvidenceDialog({ current, onSave, onClose }: {
+  current: CareerEvidence | null;
+  onSave: (draft: { id?: string; kind: CareerEvidenceKind; title: string; organization: string; timeframe: string; details: string; skills: string[]; sourceLabel: string; sourceUrl: string; verified: boolean }) => void;
+  onClose: () => void;
+}) {
+  const [kind, setKind] = useState<CareerEvidenceKind>(current?.kind ?? 'Achievement');
+  const [title, setTitle] = useState(current?.title ?? '');
+  const [organization, setOrganization] = useState(current?.organization ?? '');
+  const [timeframe, setTimeframe] = useState(current?.timeframe ?? '');
+  const [details, setDetails] = useState(current?.details ?? '');
+  const [skillsText, setSkillsText] = useState(current?.skills.join(', ') ?? '');
+  const [sourceLabel, setSourceLabel] = useState(current?.sourceLabel ?? '');
+  const [sourceUrl, setSourceUrl] = useState(current?.sourceUrl ?? '');
+  const [verified, setVerified] = useState(Boolean(current?.verifiedAt));
+  const hasSource = Boolean(sourceLabel.trim() || sourceUrl.trim());
+
+  function changed(setter: (value: string) => void, value: string) {
+    setter(value);
+    setVerified(false);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const skills = [...new Set(skillsText.split(',').map((item) => item.trim()).filter(Boolean))].slice(0, 12);
+    onSave({ id: current?.id, kind, title: title.trim(), organization: organization.trim(), timeframe: timeframe.trim(), details: details.trim(), skills, sourceLabel: sourceLabel.trim(), sourceUrl: sourceUrl.trim(), verified: verified && hasSource });
+  }
+
+  return (
+    <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card career-dialog evidence-dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-dialog-title">
+        <div className="dialog-top"><span className="dialog-icon"><Icon name="library" size={18} /></span><button className="icon-button" aria-label="Close evidence editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+        <span className="panel-eyebrow">CAREER · VERIFIED PROFILE</span>
+        <h2 id="evidence-dialog-title">{current ? 'Update a career fact.' : 'Save a fact with its source.'}</h2>
+        <p>Write a specific claim you may want to use later. Keep the wording accurate and attach a source label or link when you can.</p>
+        <form onSubmit={submit}>
+          <div className="career-form-grid">
+            <div><label className="field-label" htmlFor="evidence-kind">Record type</label><select id="evidence-kind" value={kind} onChange={(event) => { setKind(event.target.value as CareerEvidenceKind); setVerified(false); }}>{(['Experience', 'Education', 'Skill', 'Achievement', 'Project', 'Credential'] as CareerEvidenceKind[]).map((item) => <option key={item}>{item}</option>)}</select></div>
+            <div><label className="field-label" htmlFor="evidence-timeframe">Date or timeframe</label><input id="evidence-timeframe" maxLength={100} value={timeframe} onChange={(event) => changed(setTimeframe, event.target.value)} placeholder="e.g. 2023–2025 or May 2025" /></div>
+          </div>
+          <label className="field-label" htmlFor="evidence-title">Fact or accomplishment</label>
+          <input id="evidence-title" required maxLength={160} value={title} onChange={(event) => changed(setTitle, event.target.value)} placeholder="e.g. Led the migration of the reporting service" />
+          <label className="field-label" htmlFor="evidence-organization">Employer, school, or project (optional)</label>
+          <input id="evidence-organization" maxLength={160} value={organization} onChange={(event) => changed(setOrganization, event.target.value)} placeholder="Where this experience took place" />
+          <label className="field-label" htmlFor="evidence-details">Details and context</label>
+          <textarea id="evidence-details" rows={4} maxLength={5000} value={details} onChange={(event) => changed(setDetails, event.target.value)} placeholder="Describe your role, scope, outcome, and any limitations on the claim. Use a metric only when the source supports it." />
+          <label className="field-label" htmlFor="evidence-skills">Skills and keywords (comma-separated)</label>
+          <input id="evidence-skills" maxLength={900} value={skillsText} onChange={(event) => changed(setSkillsText, event.target.value)} placeholder="e.g. Rust, data migration, stakeholder communication" />
+          <label className="field-label" htmlFor="evidence-source-label">Source label (optional)</label>
+          <input id="evidence-source-label" maxLength={300} value={sourceLabel} onChange={(event) => changed(setSourceLabel, event.target.value)} placeholder="e.g. Performance review, certificate, project repository" />
+          <label className="field-label" htmlFor="evidence-source-url">Source link (optional)</label>
+          <input id="evidence-source-url" type="url" maxLength={2048} value={sourceUrl} onChange={(event) => changed(setSourceUrl, event.target.value)} placeholder="https://…" />
+          <label className={`evidence-verify-check ${!hasSource ? 'is-disabled' : ''}`}><input type="checkbox" checked={verified} disabled={!hasSource} onChange={(event) => setVerified(event.target.checked)} /><span><strong>I checked this record against the source above.</strong><small>{current?.verifiedAt && !verified ? 'Editing cleared the previous verification. Check the source again to mark this version verified.' : hasSource ? 'This marks the wording as reviewed by you; Silverstone does not verify it.' : 'Add a source label or link before marking this verified.'}</small></span></label>
+          <div className="dialog-foot"><span><Icon name="shield" size={13} /> Saved in your local workspace</span><div className="career-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim() || !details.trim()}>{current ? 'Save changes' : 'Add evidence'}<Icon name="arrow" size={14} /></button></div></div>
+        </form>
       </section>
     </div>
   );
@@ -1539,6 +1720,7 @@ function InterviewPracticeDialog({
   onSave: (updated: InterviewPrep, showToast?: boolean) => void;
   onClose: () => void;
 }) {
+  const [practiceMode, setPracticeMode] = useState<'learn' | 'qa'>('learn');
   const [activeTab, setActiveTab] = useState<'questions' | 'questionsToAsk' | 'cheatsheet'>('questions');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [questions, setQuestions] = useState<InterviewAssessmentItem[]>(prep.questions);
@@ -1748,7 +1930,7 @@ Warm regards,
               {prep.company} · {prep.format}
             </small>
             <h2 id="interview-practice-title">{prep.roleTitle} Interview Practice</h2>
-            <p>Practice aloud or typed. Silverstone checks answer structure and clarity with a local rubric; its score is coaching feedback, not an AI hiring prediction.</p>
+            <p>Learn a structure for this interview, then practice aloud or in writing. Answer feedback uses a local rubric, not an AI hiring prediction.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span className={`readiness-gauge ${readinessClass}`}>
@@ -1760,6 +1942,12 @@ Warm regards,
           </div>
         </div>
 
+        <div className="practice-mode-switch" role="group" aria-label="Interview preparation mode">
+          <button type="button" aria-pressed={practiceMode === 'learn'} className={practiceMode === 'learn' ? 'is-active' : ''} onClick={() => setPracticeMode('learn')}><Icon name="book" size={14} /> Learn mode</button>
+          <button type="button" aria-pressed={practiceMode === 'qa'} className={practiceMode === 'qa' ? 'is-active' : ''} onClick={() => setPracticeMode('qa')}><Icon name="mic" size={14} /> Q&amp;A mode <span>{questions.length} prompts</span></button>
+        </div>
+
+        {practiceMode === 'learn' ? <InterviewLearnMode prep={prep} starStories={starStories} onStart={() => setPracticeMode('qa')} /> : <>
         <div className="practice-tabs">
           <button
             type="button"
@@ -2059,7 +2247,71 @@ Warm regards,
             </div>
           )}
         </div>
+        </>}
       </section>
+    </div>
+  );
+}
+
+function InterviewLearnMode({ prep, starStories, onStart }: { prep: InterviewPrep; starStories: StarStory[]; onStart: () => void }) {
+  const lessons: Record<InterviewPrep['format'], { title: string; intro: string; steps: string[] }> = {
+    Screening: {
+      title: 'Make your first 90 seconds easy to follow.',
+      intro: 'Connect your recent work to this role, then leave room for a conversation. Keep logistics and compensation answers direct and factual.',
+      steps: ['Present: summarize your current focus and strengths.', 'Proof: choose one relevant achievement and state your contribution.', 'Fit: explain what interests you about this role, using a detail from the posting.', 'Pause: stop after about a minute and invite the next question.'],
+    },
+    Technical: {
+      title: 'Show how you reason, not just the result.',
+      intro: 'Make your thinking audible. Clarify what is being asked, state assumptions, and use examples that match the role’s tools and constraints.',
+      steps: ['Clarify inputs, constraints, and edge cases.', 'Outline an approach before diving into details.', 'Explain tradeoffs and why you chose this path.', 'Check correctness with examples, tests, and failure cases.'],
+    },
+    Behavioral: {
+      title: 'Use STAR to make one real example concrete.',
+      intro: 'Keep context brief and spend most of your time on your own decisions and actions. Describe outcomes accurately, including what you learned.',
+      steps: ['Situation: set the relevant context in one or two sentences.', 'Task: state the goal and your responsibility.', 'Action: explain what you personally did and why.', 'Result: share the supported outcome, metric, or lesson.'],
+    },
+    'System Design': {
+      title: 'Build the design together, one layer at a time.',
+      intro: 'A strong design answer is collaborative. Ask what matters most, describe a simple baseline, and make scale and reliability tradeoffs explicit.',
+      steps: ['Clarify functional needs, traffic, latency, and availability.', 'Sketch APIs, data flows, and the main components.', 'Follow one request through the system and identify bottlenecks.', 'Discuss failure handling, security, observability, and tradeoffs.'],
+    },
+    'Hiring Manager': {
+      title: 'Connect ownership and outcomes to the team’s needs.',
+      intro: 'Use examples that show how you set direction, work with others, and deliver. Be specific about the scope you owned and what you would need to learn.',
+      steps: ['Describe the outcome you were accountable for.', 'Show how you aligned people and handled disagreement.', 'Explain how you measured progress and adjusted.', 'Ask about success measures, team priorities, and the first 90 days.'],
+    },
+    'Case Study': {
+      title: 'Make the problem-solving path visible.',
+      intro: 'Resist jumping to a solution. Structure the question, state assumptions, and use evidence or metrics to compare options.',
+      steps: ['Restate the objective and clarify what success means.', 'Break the problem into a few useful parts.', 'State assumptions and identify the evidence you would seek.', 'Compare options, recommend one, and name risks or next steps.'],
+    },
+  };
+  const lesson = lessons[prep.format];
+
+  return (
+    <div className="interview-learn-body">
+      <section className="interview-learn-hero">
+        <div><span className="panel-eyebrow">LEARN · {prep.format.toUpperCase()}</span><h3>{lesson.title}</h3><p>{lesson.intro}</p></div>
+        <div className="learn-role-context"><Icon name="target" size={14} /><span><strong>{prep.roleTitle}</strong><small>{prep.company}</small></span></div>
+      </section>
+      <div className="interview-learning-grid">
+        <section className="interview-learning-card">
+          <span className="learning-card-index">01 / ANSWER FRAME</span>
+          <h4>A practical structure</h4>
+          <ol>{lesson.steps.map((step) => <li key={step}>{step}</li>)}</ol>
+        </section>
+        <section className="interview-learning-card">
+          <span className="learning-card-index">02 / YOUR MATERIAL</span>
+          <h4>Bring your own evidence</h4>
+          {prep.focusTopics.length ? <><p className="learning-muted">Focus topics saved for this interview:</p><div className="competency-tags">{prep.focusTopics.map((topic) => <span className="competency-pill" key={topic}>{topic}</span>)}</div></> : <p className="learning-muted">Add focus topics in interview setup to tailor your practice.</p>}
+          <div className="learning-story-count"><Icon name="layers" size={15} /><span><strong>{starStories.length} STAR {starStories.length === 1 ? 'story' : 'stories'} saved</strong><small>{starStories.length ? starStories.slice(0, 3).map((story) => story.title).join(' · ') : 'Build a story in the Career module to use as a practice starting point.'}</small></span></div>
+        </section>
+        <section className="interview-learning-card learning-context-card">
+          <span className="learning-card-index">03 / ROLE CONTEXT</span><h4>Use the job details</h4>
+          {prep.jobContext.trim() ? <p>{prep.jobContext}</p> : <p className="learning-muted">Add a role description or talking points in interview setup. Tie examples to the actual responsibilities rather than guessing what the interviewer wants.</p>}
+        </section>
+      </div>
+      <div className="interview-learn-footer"><span><Icon name="shield" size={13} /> This guide is saved in the app; assessment stays local and is not an AI hiring score.</span><button className="button button-primary" onClick={onStart}>Start Q&amp;A practice <Icon name="arrow" size={14} /></button></div>
     </div>
   );
 }
@@ -2477,7 +2729,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, career evidence records, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -2491,8 +2743,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, recall cards, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, recall cards, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, career evidence records, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, career evidence records, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <CloudWorkspacePanel workspace={state} onRestore={onRestoreCloud} />
         <section className="panel settings-panel"><PanelHeading eyebrow="APP CONNECTIONS" title="External services" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
