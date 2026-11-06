@@ -110,8 +110,47 @@ export interface SocialPostDraft {
   updatedAt: string;
 }
 
+export type InterviewFormat = 'Screening' | 'Technical' | 'Behavioral' | 'System Design' | 'Hiring Manager' | 'Case Study';
+
+export interface InterviewAssessmentItem {
+  id: string;
+  question: string;
+  category: 'behavioral' | 'technical' | 'situational' | 'leadership';
+  userAnswer: string;
+  score: number; // 0 - 100
+  starCoverage?: {
+    situation: boolean;
+    task: boolean;
+    action: boolean;
+    result: boolean;
+  };
+  strengths: string[];
+  improvements: string[];
+  suggestedPhrasing?: string;
+  assessedAt?: string;
+}
+
+export interface InterviewPrep {
+  id: string;
+  opportunityId?: string;
+  roleTitle: string;
+  company: string;
+  format: InterviewFormat;
+  scheduledAt: string;
+  locationOrLink: string;
+  interviewers: string;
+  focusTopics: string[];
+  jobContext: string;
+  questions: InterviewAssessmentItem[];
+  questionsToAsk: string[];
+  notes: string;
+  readinessScore: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LocalAppState {
-  version: 6;
+  version: 7;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
@@ -120,4 +159,5 @@ export interface LocalAppState {
   careerOpportunities: CareerOpportunity[];
   socialPosts: SocialPostDraft[];
   studyCards: StudyCard[];
+  interviewPreps: InterviewPrep[];
 }

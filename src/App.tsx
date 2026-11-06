@@ -3,8 +3,9 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
-import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
+import { DEFAULT_QUESTIONS_BY_FORMAT, DEFAULT_QUESTIONS_TO_ASK, INTERVIEW_FORMATS, assessInterviewAnswer, calculateReadiness } from './interview';
 
 type ModalMode = 'task' | 'capture' | null;
 type Theme = 'light' | 'dark';
@@ -102,6 +103,8 @@ function App() {
   const [studyCardEditor, setStudyCardEditor] = useState<StudyCard | null | undefined>(undefined);
   const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
   const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
+  const [interviewEditor, setInterviewEditor] = useState<{ prep: InterviewPrep | null; opportunityId?: string } | undefined>(undefined);
+  const [interviewPractice, setInterviewPractice] = useState<InterviewPrep | undefined>(undefined);
   const [socialEditor, setSocialEditor] = useState<SocialPostDraft | null | undefined>(undefined);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -302,6 +305,39 @@ function App() {
     setToast('Opportunity saved locally');
   }
 
+  function saveInterviewPrep(prep: InterviewPrep) {
+    const updatedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.interviewPreps.find((item) => item.id === prep.id);
+      const updated: InterviewPrep = {
+        ...prep,
+        id: prep.id || createId('interview-prep'),
+        updatedAt,
+        createdAt: existing?.createdAt ?? updatedAt,
+      };
+      const interviewPreps = existing
+        ? current.interviewPreps.map((item) => (item.id === existing.id ? updated : item))
+        : [updated, ...current.interviewPreps];
+      return { ...current, interviewPreps };
+    });
+    setInterviewEditor(undefined);
+    if (interviewPractice?.id === prep.id) {
+      setInterviewPractice(prep);
+    }
+    setToast(prep.id ? 'Interview preparation saved' : 'Interview prep added to workspace');
+  }
+
+  function deleteInterviewPrep(id: string) {
+    setAppState((current) => ({
+      ...current,
+      interviewPreps: current.interviewPreps.filter((item) => item.id !== id),
+    }));
+    if (interviewPractice?.id === id) {
+      setInterviewPractice(undefined);
+    }
+    setToast('Interview prep removed');
+  }
+
   function saveSocialPost(draft: { id?: string; title: string; body: string; channels: SocialChannel[]; plannedFor: string; timezone: string }) {
     const updatedAt = new Date().toISOString();
     setAppState((current) => {
@@ -374,7 +410,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 6, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [] });
+      setAppState({ version: 7, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -458,6 +494,10 @@ function App() {
               onEditProject={setPortfolioEditor}
               onCreateOpportunity={() => setCareerEditor(null)}
               onEditOpportunity={setCareerEditor}
+              onCreateInterview={(opportunityId) => setInterviewEditor({ prep: null, opportunityId })}
+              onEditInterview={(prep) => setInterviewEditor({ prep })}
+              onPracticeInterview={(prep) => setInterviewPractice(prep)}
+              onDeleteInterview={deleteInterviewPrep}
               onCreateSocialPost={() => setSocialEditor(null)}
               onEditSocialPost={setSocialEditor}
             />
@@ -491,6 +531,22 @@ function App() {
       {studyCardEditor !== undefined && <StudyCardDialog current={studyCardEditor} defaultTopic={appState.studyGoal?.topic ?? ''} onSave={saveStudyCard} onClose={() => setStudyCardEditor(undefined)} />}
       {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
       {careerEditor !== undefined && <CareerOpportunityDialog current={careerEditor} onSave={saveCareerOpportunity} onClose={() => setCareerEditor(undefined)} />}
+      {interviewEditor !== undefined && (
+        <InterviewPrepDialog
+          current={interviewEditor.prep}
+          initialOpportunityId={interviewEditor.opportunityId}
+          opportunities={appState.careerOpportunities}
+          onSave={saveInterviewPrep}
+          onClose={() => setInterviewEditor(undefined)}
+        />
+      )}
+      {interviewPractice !== undefined && (
+        <InterviewPracticeDialog
+          prep={interviewPractice}
+          onSave={saveInterviewPrep}
+          onClose={() => setInterviewPractice(undefined)}
+        />
+      )}
       {socialEditor !== undefined && <SocialPostDialog current={socialEditor} onSave={saveSocialPost} onClose={() => setSocialEditor(undefined)} />}
       {voiceOpen && (
         <VoiceAssistantDialog
@@ -595,6 +651,9 @@ function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocu
   const weekStudyMinutes = studyDays.reduce((total, day) => total + day.minutes, 0);
   const activeOpportunities = state.careerOpportunities.filter((item) => item.stage !== 'Closed');
   const nextOpportunity = [...activeOpportunities].filter((item) => item.deadline).sort((left, right) => left.deadline.localeCompare(right.deadline))[0] ?? null;
+  const nextInterview = [...state.interviewPreps]
+    .filter((item) => item.scheduledAt && new Date(item.scheduledAt).getTime() > Date.now())
+    .sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt))[0] ?? null;
   const nextPlannedPost = [...state.socialPosts]
     .filter((post) => post.plannedFor && new Date(post.plannedFor).getTime() > Date.now())
     .sort((left, right) => left.plannedFor.localeCompare(right.plannedFor))[0] ?? null;
@@ -608,6 +667,7 @@ function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocu
   const portfolioCount = state.portfolioProjects.length;
   const dueCards = state.studyCards.filter((card) => new Date(card.nextReviewAt).getTime() <= Date.now());
   const radarItems = [
+    ...(nextInterview ? [{ icon: 'briefcase' as const, label: 'INTERVIEW', title: `${nextInterview.company} · ${nextInterview.format}`, detail: `${formatPlannedTime(nextInterview.scheduledAt)} · ${nextInterview.readinessScore > 0 ? `${nextInterview.readinessScore}% readiness` : 'Needs prep'}`, onClick: () => onNavigate('career') }] : []),
     ...(dueCards.length ? [{ icon: 'clock' as const, label: 'RECALL', title: `${dueCards.length} recall card${dueCards.length === 1 ? '' : 's'} due`, detail: `Spaced review · ${dueCards[0]?.topic ?? 'General'}`, onClick: () => onNavigate('study') }] : []),
     ...(studyGoal ? [{ icon: 'book' as const, label: 'STUDY', title: studyGoal.topic, detail: checkedInToday ? `${studyGoal.availableMinutesToday} minutes available · ${suggestedStudyMinutes ? `${suggestedStudyMinutes}-minute session suggested` : 'no time planned today'}` : 'Check in with today’s free time to plan a session.', onClick: () => onNavigate('study') }] : []),
     ...(nextOpportunity ? [{ icon: 'briefcase' as const, label: 'DEADLINE', title: nextOpportunity.title, detail: `${nextOpportunity.kind} · ${formatDeadline(nextOpportunity.deadline)} · ${nextOpportunity.organization}`, onClick: () => onNavigate('career') }] : []),
@@ -793,7 +853,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateSocialPost, onEditSocialPost }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateSocialPost, onEditSocialPost }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -809,6 +869,10 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onEditProject: (project: PortfolioProject) => void;
   onCreateOpportunity: () => void;
   onEditOpportunity: (opportunity: CareerOpportunity) => void;
+  onCreateInterview: (opportunityId?: string) => void;
+  onEditInterview: (prep: InterviewPrep) => void;
+  onPracticeInterview: (prep: InterviewPrep) => void;
+  onDeleteInterview: (id: string) => void;
   onCreateSocialPost: () => void;
   onEditSocialPost: (post: SocialPostDraft) => void;
 }) {
@@ -823,7 +887,18 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
         </div>
       </div>
       {page === 'study' && <StudyModule goal={state.studyGoal} sessions={state.studySessions} cards={state.studyCards} onPlan={onPlanStudy} onStart={onStartStudy} onAddCard={onAddStudyCard} onEditCard={onEditStudyCard} onReviewCard={onReviewStudyCard} />}
-      {page === 'career' && <CareerModule opportunities={state.careerOpportunities} onCreate={onCreateOpportunity} onEdit={onEditOpportunity} />}
+      {page === 'career' && (
+        <CareerModule
+          opportunities={state.careerOpportunities}
+          interviewPreps={state.interviewPreps}
+          onCreate={onCreateOpportunity}
+          onEdit={onEditOpportunity}
+          onCreateInterview={onCreateInterview}
+          onEditInterview={onEditInterview}
+          onPracticeInterview={onPracticeInterview}
+          onDeleteInterview={onDeleteInterview}
+        />
+      )}
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
       {page === 'studio' && <StudioModule posts={state.socialPosts} onCreate={onCreateSocialPost} onEdit={onEditSocialPost} />}
       {page === 'library' && <LibraryModule captures={state.captures} onCapture={onCapture} />}
@@ -883,18 +958,195 @@ function formatDeadline(deadline: string): string {
   return Number.isNaN(date.getTime()) ? 'Invalid date' : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
 }
 
-function CareerModule({ opportunities, onCreate, onEdit }: { opportunities: CareerOpportunity[]; onCreate: () => void; onEdit: (opportunity: CareerOpportunity) => void }) {
+function CareerModule({
+  opportunities,
+  interviewPreps,
+  onCreate,
+  onEdit,
+  onCreateInterview,
+  onEditInterview,
+  onPracticeInterview,
+  onDeleteInterview,
+}: {
+  opportunities: CareerOpportunity[];
+  interviewPreps: InterviewPrep[];
+  onCreate: () => void;
+  onEdit: (opportunity: CareerOpportunity) => void;
+  onCreateInterview: (opportunityId?: string) => void;
+  onEditInterview: (prep: InterviewPrep) => void;
+  onPracticeInterview: (prep: InterviewPrep) => void;
+  onDeleteInterview: (id: string) => void;
+}) {
+  const [tab, setTab] = useState<'pipeline' | 'interviews'>('pipeline');
   const activeOpportunities = opportunities.filter((item) => item.stage !== 'Closed');
   const thisMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const dueThisMonth = activeOpportunities.filter((item) => item.deadline.startsWith(thisMonth)).length;
   const readyToSubmit = activeOpportunities.filter((item) => item.stage === 'Ready to submit').length;
   const sortedOpportunities = [...opportunities].sort((left, right) => (left.deadline || '9999-99-99').localeCompare(right.deadline || '9999-99-99'));
 
+  const totalAssessedQuestions = interviewPreps.reduce((acc, prep) => acc + prep.questions.filter((q) => q.score > 0).length, 0);
+  const assessedPreps = interviewPreps.filter((p) => p.readinessScore > 0);
+  const averageReadiness = assessedPreps.length > 0
+    ? Math.round(assessedPreps.reduce((acc, p) => acc + p.readinessScore, 0) / assessedPreps.length)
+    : 0;
+
   return (
     <div className="module-layout">
-      <section className="module-stats"><MiniStat value={String(activeOpportunities.length)} label="In the pipeline" icon="briefcase" /><MiniStat value={String(dueThisMonth)} label="Deadlines this month" icon="calendar" /><MiniStat value={String(readyToSubmit)} label="Ready to submit" icon="shield" /></section>
-      <section className="panel module-panel"><PanelHeading eyebrow="YOUR PIPELINE" title="Opportunities in motion" action="Add opportunity" onAction={onCreate} /><div className="opportunity-list">{sortedOpportunities.length ? sortedOpportunities.map((item) => <div className="opportunity-row" key={item.id}><span className={`opportunity-badge badge-${item.kind === 'Scholarship' ? 'violet' : 'blue'}`}><Icon name={item.kind === 'Scholarship' ? 'target' : 'briefcase'} size={16} /></span><span className="opportunity-copy"><strong>{item.title}</strong><small>{item.kind} · {item.organization}</small></span><span className="stage-pill">{item.stage}</span><span className="opportunity-due"><small>DEADLINE</small><strong>{formatDeadline(item.deadline)}</strong></span>{item.sourceUrl && <a className="icon-button row-chevron opportunity-source" href={item.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open source for ${item.title}`}><Icon name="external" size={14} /></a>}<button className="icon-button row-chevron" aria-label={`Edit ${item.title}`} onClick={() => onEdit(item)}><Icon name="arrow" size={15} /></button></div>) : <div className="career-empty"><span className="empty-icon"><Icon name="briefcase" /></span><strong>Your pipeline starts with an opportunity.</strong><span>Add a job or scholarship, save its source and deadline, then track your next step here.</span><button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={15} /> Add an opportunity</button></div>}</div></section>
-      <section className="module-cards"><MiniInfoCard icon="file" title="Evidence library" body="Keep your experience and achievements linked to the source that supports them." /><MiniInfoCard icon="sparkle" title="Draft with confidence" body="CV and essay drafts will flag claims that need your confirmation." /></section>
+      <div className="subnav-bar">
+        <button
+          type="button"
+          className={`subnav-btn ${tab === 'pipeline' ? 'is-active' : ''}`}
+          onClick={() => setTab('pipeline')}
+        >
+          <Icon name="briefcase" size={15} /> Opportunity Pipeline ({opportunities.length})
+        </button>
+        <button
+          type="button"
+          className={`subnav-btn ${tab === 'interviews' ? 'is-active' : ''}`}
+          onClick={() => setTab('interviews')}
+        >
+          <Icon name="target" size={15} /> Interview Prep & Assessment ({interviewPreps.length})
+        </button>
+      </div>
+
+      {tab === 'pipeline' ? (
+        <>
+          <section className="module-stats">
+            <MiniStat value={String(activeOpportunities.length)} label="In the pipeline" icon="briefcase" />
+            <MiniStat value={String(dueThisMonth)} label="Deadlines this month" icon="calendar" />
+            <MiniStat value={String(readyToSubmit)} label="Ready to submit" icon="shield" />
+          </section>
+          <section className="panel module-panel">
+            <PanelHeading eyebrow="YOUR PIPELINE" title="Opportunities in motion" action="Add opportunity" onAction={onCreate} />
+            <div className="opportunity-list">
+              {sortedOpportunities.length ? (
+                sortedOpportunities.map((item) => {
+                  const linkedPrep = interviewPreps.find((prep) => prep.opportunityId === item.id);
+                  return (
+                    <div className="opportunity-row" key={item.id}>
+                      <span className={`opportunity-badge badge-${item.kind === 'Scholarship' ? 'violet' : 'blue'}`}>
+                        <Icon name={item.kind === 'Scholarship' ? 'target' : 'briefcase'} size={16} />
+                      </span>
+                      <span className="opportunity-copy">
+                        <strong>{item.title}</strong>
+                        <small>{item.kind} · {item.organization}</small>
+                      </span>
+                      <span className="stage-pill">{item.stage}</span>
+                      <span className="opportunity-due">
+                        <small>DEADLINE</small>
+                        <strong>{formatDeadline(item.deadline)}</strong>
+                      </span>
+                      {linkedPrep ? (
+                        <button
+                          type="button"
+                          className="interview-link-pill"
+                          onClick={() => onPracticeInterview(linkedPrep)}
+                          title="Open interview prep & assessment"
+                        >
+                          <Icon name="target" size={12} /> {linkedPrep.format} · {linkedPrep.readinessScore > 0 ? `${linkedPrep.readinessScore}%` : 'Practice'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="interview-link-pill pill-secondary"
+                          onClick={() => onCreateInterview(item.id)}
+                          title="Prepare an interview for this role"
+                        >
+                          <Icon name="plus" size={12} /> Prep interview
+                        </button>
+                      )}
+                      {item.sourceUrl && (
+                        <a className="icon-button row-chevron opportunity-source" href={item.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open source for ${item.title}`}>
+                          <Icon name="external" size={14} />
+                        </a>
+                      )}
+                      <button className="icon-button row-chevron" aria-label={`Edit ${item.title}`} onClick={() => onEdit(item)}>
+                        <Icon name="arrow" size={15} />
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="career-empty">
+                  <span className="empty-icon"><Icon name="briefcase" /></span>
+                  <strong>Your pipeline starts with an opportunity.</strong>
+                  <span>Add a job or scholarship, save its source and deadline, then track your next step here.</span>
+                  <button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={15} /> Add an opportunity</button>
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      ) : (
+        <>
+          <section className="module-stats">
+            <MiniStat value={String(interviewPreps.length)} label="Interviews tracked" icon="briefcase" />
+            <MiniStat value={String(totalAssessedQuestions)} label="Questions assessed" icon="check" />
+            <MiniStat value={averageReadiness ? `${averageReadiness}%` : '—'} label="Average readiness" icon="trend" />
+          </section>
+          <section className="panel module-panel">
+            <PanelHeading eyebrow="MOCK INTERVIEWS & ASSESSMENT" title="Interview preparations" action="New interview prep" onAction={() => onCreateInterview()} />
+            <div className="interview-prep-list">
+              {interviewPreps.length ? (
+                interviewPreps.map((prep) => {
+                  const assessedCount = prep.questions.filter((q) => q.score > 0).length;
+                  const readinessClass = prep.readinessScore >= 75 ? 'is-high' : prep.readinessScore >= 50 ? 'is-medium' : prep.readinessScore > 0 ? 'is-low' : 'is-empty';
+                  const readinessLabel = prep.readinessScore >= 75 ? 'High Readiness' : prep.readinessScore >= 50 ? 'Good Progress' : prep.readinessScore > 0 ? 'Needs Practice' : 'Not Assessed';
+                  const linkedOpportunity = opportunities.find((op) => op.id === prep.opportunityId);
+                  return (
+                    <article className="interview-prep-card" key={prep.id}>
+                      <div className="interview-card-header">
+                        <div className="interview-card-titles">
+                          <small>{prep.company}{linkedOpportunity ? ` · Linked to ${linkedOpportunity.title}` : ''}</small>
+                          <strong>{prep.roleTitle}</strong>
+                          <span>{prep.focusTopics.length ? prep.focusTopics.join(' · ') : 'General competencies'}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span className="interview-format-pill">{prep.format}</span>
+                          <span className={`readiness-gauge ${readinessClass}`}>
+                            {prep.readinessScore > 0 ? `${prep.readinessScore}%` : '0%'} {readinessLabel}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="interview-card-meta">
+                        <span><Icon name="calendar" size={14} /> {prep.scheduledAt ? formatPlannedTime(prep.scheduledAt) : 'Schedule pending'}</span>
+                        {prep.locationOrLink && <span><Icon name="external" size={14} /> {prep.locationOrLink}</span>}
+                        {prep.interviewers && <span><Icon name="shield" size={14} /> {prep.interviewers}</span>}
+                        <span><Icon name="file" size={14} /> {prep.questions.length} question{prep.questions.length === 1 ? '' : 's'} ({assessedCount} assessed)</span>
+                      </div>
+                      <div className="interview-card-actions">
+                        <button className="button button-primary" onClick={() => onPracticeInterview(prep)}>
+                          <Icon name="play" size={14} /> Practice & Assess ({prep.questions.length})
+                        </button>
+                        <div className="interview-card-actions-right">
+                          <button className="button button-secondary" onClick={() => onEditInterview(prep)}>
+                            <Icon name="more" size={14} /> Edit setup
+                          </button>
+                          <button className="icon-button" aria-label={`Delete interview prep for ${prep.roleTitle}`} onClick={() => onDeleteInterview(prep.id)}>
+                            <Icon name="close" size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className="empty-state">
+                  <span className="empty-icon"><Icon name="target" /></span>
+                  <strong>No interview preparations yet.</strong>
+                  <span>Create an interview plan manually or link one from your opportunity pipeline. Practice role-specific questions, receive instant STAR assessment feedback, and draft questions to ask the interviewer.</span>
+                  <button className="button button-secondary" onClick={() => onCreateInterview()}><Icon name="plus" size={15} /> Create interview prep</button>
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
+      <section className="module-cards">
+        <MiniInfoCard icon="target" title="STAR Method evaluation" body="Practice framing behavioral answers with Situation, Task, Action, and measurable Results." />
+        <MiniInfoCard icon="sparkle" title="Questions for the team" body="Prepare thoughtful reverse-interview questions about tech debt, culture, and first 90 days." />
+      </section>
     </div>
   );
 }
@@ -933,6 +1185,657 @@ function CareerOpportunityDialog({ current, onSave, onClose }: { current: Career
           <label className="field-label" htmlFor="opportunity-fit">Fit notes and questions to verify</label><textarea id="opportunity-fit" rows={4} maxLength={5000} value={fitNotes} onChange={(event) => setFitNotes(event.target.value)} placeholder="Why does this fit? Which eligibility details or requirements should you check?" />
           <div className="dialog-foot"><span><Icon name="shield" size={13} /> Saved only in this browser</span><div className="career-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim() || !organization.trim()}>Save opportunity<Icon name="arrow" size={14} /></button></div></div>
         </form>
+      </section>
+    </div>
+  );
+}
+
+function InterviewPrepDialog({
+  current,
+  initialOpportunityId,
+  opportunities,
+  onSave,
+  onClose,
+}: {
+  current: InterviewPrep | null;
+  initialOpportunityId?: string;
+  opportunities: CareerOpportunity[];
+  onSave: (prep: InterviewPrep) => void;
+  onClose: () => void;
+}) {
+  const linkedOpportunity = opportunities.find((op) => op.id === (current?.opportunityId ?? initialOpportunityId));
+  const [opportunityId, setOpportunityId] = useState(current?.opportunityId ?? initialOpportunityId ?? '');
+  const [roleTitle, setRoleTitle] = useState(current?.roleTitle ?? linkedOpportunity?.title ?? '');
+  const [company, setCompany] = useState(current?.company ?? linkedOpportunity?.organization ?? '');
+  const [format, setFormat] = useState<InterviewFormat>(current?.format ?? 'Behavioral');
+  const [scheduledLocal, setScheduledLocal] = useState(formatDateTimeLocal(current?.scheduledAt ?? ''));
+  const [locationOrLink, setLocationOrLink] = useState(current?.locationOrLink ?? '');
+  const [interviewers, setInterviewers] = useState(current?.interviewers ?? '');
+  const [focusTopicsText, setFocusTopicsText] = useState(current?.focusTopics.join(', ') ?? '');
+  const [jobContext, setJobContext] = useState(current?.jobContext ?? linkedOpportunity?.fitNotes ?? '');
+  const [preloadQuestions, setPreloadQuestions] = useState(!current);
+
+  function handleOpportunityChange(selectedId: string) {
+    setOpportunityId(selectedId);
+    if (selectedId) {
+      const match = opportunities.find((op) => op.id === selectedId);
+      if (match) {
+        if (!roleTitle || roleTitle === linkedOpportunity?.title) setRoleTitle(match.title);
+        if (!company || company === linkedOpportunity?.organization) setCompany(match.organization);
+        if (!jobContext) setJobContext(match.fitNotes);
+      }
+    }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanRole = roleTitle.trim();
+    const cleanCompany = company.trim();
+    if (!cleanRole || !cleanCompany) return;
+
+    const scheduledDate = scheduledLocal ? new Date(scheduledLocal) : null;
+    const scheduledAt = scheduledDate && !Number.isNaN(scheduledDate.getTime()) ? scheduledDate.toISOString() : '';
+    const focusTopics = focusTopicsText.split(',').map((item) => item.trim()).filter(Boolean);
+
+    let questions = current?.questions ?? [];
+    let questionsToAsk = current?.questionsToAsk ?? [];
+
+    if (!current && preloadQuestions) {
+      const templateQuestions = DEFAULT_QUESTIONS_BY_FORMAT[format] || DEFAULT_QUESTIONS_BY_FORMAT.Behavioral;
+      questions = templateQuestions.map((item) => ({
+        id: createId('interview-q'),
+        question: item.question,
+        category: item.category,
+        userAnswer: '',
+        score: 0,
+        strengths: [],
+        improvements: [],
+      }));
+      questionsToAsk = DEFAULT_QUESTIONS_TO_ASK[format] || DEFAULT_QUESTIONS_TO_ASK.Behavioral;
+    }
+
+    const prep: InterviewPrep = {
+      id: current?.id ?? createId('interview-prep'),
+      opportunityId: opportunityId || undefined,
+      roleTitle: cleanRole,
+      company: cleanCompany,
+      format,
+      scheduledAt,
+      locationOrLink: locationOrLink.trim(),
+      interviewers: interviewers.trim(),
+      focusTopics,
+      jobContext: jobContext.trim(),
+      questions,
+      questionsToAsk,
+      notes: current?.notes ?? '',
+      readinessScore: current?.readinessScore ?? 0,
+      createdAt: current?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    onSave(prep);
+  }
+
+  return (
+    <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card career-dialog" role="dialog" aria-modal="true" aria-labelledby="interview-prep-dialog-title">
+        <div className="dialog-top">
+          <span className="dialog-icon"><Icon name="target" size={18} /></span>
+          <button className="icon-button" aria-label="Close interview setup" onClick={onClose}><Icon name="close" size={17} /></button>
+        </div>
+        <span className="panel-eyebrow">INTERVIEW PREPARATION & ASSESSMENT</span>
+        <h2 id="interview-prep-dialog-title">{current ? 'Update interview setup.' : 'Prepare for an interview.'}</h2>
+        <p>Set up the role details, format, and key competencies. You can practice and get evaluated in the assessment simulator.</p>
+
+        <form onSubmit={submit}>
+          <div className="career-form-grid">
+            <div>
+              <label className="field-label" htmlFor="interview-opportunity-select">Linked opportunity (optional)</label>
+              <select id="interview-opportunity-select" value={opportunityId} onChange={(e) => handleOpportunityChange(e.target.value)}>
+                <option value="">Standalone / Unlinked</option>
+                {opportunities.map((op) => (
+                  <option key={op.id} value={op.id}>{op.title} · {op.organization}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="interview-format-select">Interview type / format</label>
+              <select id="interview-format-select" value={format} onChange={(e) => setFormat(e.target.value as InterviewFormat)}>
+                {INTERVIEW_FORMATS.map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="career-form-grid">
+            <div>
+              <label className="field-label" htmlFor="interview-role-title">Role title</label>
+              <input id="interview-role-title" required maxLength={160} value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} placeholder="e.g. Senior Backend Engineer" />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="interview-company">Company / Organization</label>
+              <input id="interview-company" required maxLength={120} value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. Acme Tech" />
+            </div>
+          </div>
+
+          <div className="career-form-grid">
+            <div>
+              <label className="field-label" htmlFor="interview-scheduled-at">Date & time (optional)</label>
+              <input id="interview-scheduled-at" type="datetime-local" value={scheduledLocal} onChange={(e) => setScheduledLocal(e.target.value)} />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="interview-location">Platform or meeting link</label>
+              <input id="interview-location" maxLength={300} value={locationOrLink} onChange={(e) => setLocationOrLink(e.target.value)} placeholder="e.g. Google Meet, Zoom, or On-site" />
+            </div>
+          </div>
+
+          <label className="field-label" htmlFor="interview-interviewers">Interviewers & titles (optional)</label>
+          <input id="interview-interviewers" maxLength={300} value={interviewers} onChange={(e) => setInterviewers(e.target.value)} placeholder="e.g. Sarah Miller (Engineering Director), David K (Principal Architect)" />
+
+          <label className="field-label" htmlFor="interview-focus-topics">Focus topics & target competencies (comma-separated)</label>
+          <input id="interview-focus-topics" maxLength={400} value={focusTopicsText} onChange={(e) => setFocusTopicsText(e.target.value)} placeholder="e.g. High-throughput distributed caching, Cross-functional alignment, Incident debugging" />
+
+          <label className="field-label" htmlFor="interview-context">Job requirements excerpt / talking points</label>
+          <textarea id="interview-context" rows={3} maxLength={5000} value={jobContext} onChange={(e) => setJobContext(e.target.value)} placeholder="Key responsibilities from job posting, talking points, or questions you anticipate..." />
+
+          {!current && (
+            <div style={{ marginTop: '12px' }}>
+              <label className="social-channel-option" style={{ display: 'inline-flex', cursor: 'pointer' }}>
+                <input type="checkbox" checked={preloadQuestions} onChange={(e) => setPreloadQuestions(e.target.checked)} />
+                <span><Icon name="sparkle" size={14} /></span>
+                Preload recommended mock questions and reverse-interview questions for this format
+              </label>
+            </div>
+          )}
+
+          <div className="dialog-foot">
+            <span><Icon name="shield" size={13} /> Saved only in this browser</span>
+            <div className="career-editor-actions">
+              <button className="button button-secondary" type="button" onClick={onClose}>Cancel</button>
+              <button className="button button-primary" type="submit" disabled={!roleTitle.trim() || !company.trim()}>
+                Save setup<Icon name="arrow" size={14} />
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function InterviewPracticeDialog({
+  prep,
+  onSave,
+  onClose,
+}: {
+  prep: InterviewPrep;
+  onSave: (updated: InterviewPrep) => void;
+  onClose: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<'questions' | 'questionsToAsk' | 'cheatsheet'>('questions');
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [questions, setQuestions] = useState<InterviewAssessmentItem[]>(prep.questions);
+  const [questionsToAsk, setQuestionsToAsk] = useState<string[]>(prep.questionsToAsk);
+  const [notes, setNotes] = useState(prep.notes);
+  const [elevatorPitch, setElevatorPitch] = useState('');
+  const [newQuestionText, setNewQuestionText] = useState('');
+  const [newQuestionCategory, setNewQuestionCategory] = useState<InterviewAssessmentItem['category']>('behavioral');
+  const [newQuestionToAsk, setNewQuestionToAsk] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState('');
+  const speechRecognizerRef = useRef<SpeechRecognizer | null>(null);
+
+  const currentQ = questions[selectedIdx] ?? null;
+  const wordCount = currentQ?.userAnswer.trim() ? currentQ.userAnswer.trim().split(/\s+/).length : 0;
+  const estimatedSeconds = Math.round((wordCount / 135) * 60);
+
+  const readinessScore = calculateReadiness(questions);
+  const readinessClass = readinessScore >= 75 ? 'is-high' : readinessScore >= 50 ? 'is-medium' : readinessScore > 0 ? 'is-low' : 'is-empty';
+
+  function handleAnswerChange(text: string) {
+    if (!currentQ) return;
+    const updated = questions.map((item, index) => (index === selectedIdx ? { ...item, userAnswer: text } : item));
+    setQuestions(updated);
+  }
+
+  function toggleDictation() {
+    if (isListening) {
+      speechRecognizerRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const recognizer = createSpeechRecognizer();
+    if (!recognizer) {
+      alert('Speech recognition is not supported in this browser.');
+      return;
+    }
+    speechRecognizerRef.current = recognizer;
+    recognizer.lang = 'en-US';
+    recognizer.continuous = true;
+    recognizer.interimResults = true;
+
+    recognizer.onresult = (event) => {
+      let finalSegment = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const item = event.results[i];
+        if (item?.isFinal) {
+          finalSegment += item[0].transcript + ' ';
+        }
+      }
+      if (finalSegment && currentQ) {
+        setQuestions((prev) =>
+          prev.map((item, index) =>
+            index === selectedIdx
+              ? { ...item, userAnswer: (item.userAnswer ? item.userAnswer.trimEnd() + ' ' : '') + finalSegment.trim() }
+              : item
+          )
+        );
+      }
+    };
+    recognizer.onerror = () => setIsListening(false);
+    recognizer.onend = () => setIsListening(false);
+
+    try {
+      recognizer.start();
+      setIsListening(true);
+    } catch {
+      setIsListening(false);
+    }
+  }
+
+  function handleAssess() {
+    if (!currentQ || !currentQ.userAnswer.trim()) return;
+    const assessment = assessInterviewAnswer(
+      currentQ.question,
+      currentQ.userAnswer,
+      currentQ.category,
+      prep.roleTitle,
+      prep.company
+    );
+    const updatedQ: InterviewAssessmentItem = {
+      ...currentQ,
+      score: assessment.score,
+      starCoverage: assessment.starCoverage,
+      strengths: assessment.strengths,
+      improvements: assessment.improvements,
+      suggestedPhrasing: assessment.suggestedPhrasing,
+      assessedAt: new Date().toISOString(),
+    };
+    const updatedList = questions.map((item, index) => (index === selectedIdx ? updatedQ : item));
+    setQuestions(updatedList);
+    const newReadiness = calculateReadiness(updatedList);
+    onSave({
+      ...prep,
+      questions: updatedList,
+      questionsToAsk,
+      notes,
+      readinessScore: newReadiness,
+    });
+  }
+
+  function addCustomQuestion(e: FormEvent) {
+    e.preventDefault();
+    if (!newQuestionText.trim()) return;
+    const item: InterviewAssessmentItem = {
+      id: createId('interview-q'),
+      question: newQuestionText.trim(),
+      category: newQuestionCategory,
+      userAnswer: '',
+      score: 0,
+      strengths: [],
+      improvements: [],
+    };
+    const updated = [...questions, item];
+    setQuestions(updated);
+    setSelectedIdx(updated.length - 1);
+    setNewQuestionText('');
+    onSave({ ...prep, questions: updated });
+  }
+
+  function deleteQuestion(indexToDelete: number) {
+    const updated = questions.filter((_, i) => i !== indexToDelete);
+    setQuestions(updated);
+    const nextIdx = Math.max(0, Math.min(selectedIdx, updated.length - 1));
+    setSelectedIdx(nextIdx);
+    onSave({ ...prep, questions: updated, readinessScore: calculateReadiness(updated) });
+  }
+
+  function addQuestionToAsk(e: FormEvent) {
+    e.preventDefault();
+    if (!newQuestionToAsk.trim()) return;
+    const updated = [...questionsToAsk, newQuestionToAsk.trim()];
+    setQuestionsToAsk(updated);
+    setNewQuestionToAsk('');
+    onSave({ ...prep, questionsToAsk: updated });
+  }
+
+  function deleteQuestionToAsk(indexToDelete: number) {
+    const updated = questionsToAsk.filter((_, i) => i !== indexToDelete);
+    setQuestionsToAsk(updated);
+    onSave({ ...prep, questionsToAsk: updated });
+  }
+
+  const generatedThankYou = `Subject: Thank you — ${prep.roleTitle} interview (${prep.company})
+
+Dear ${prep.interviewers || 'Hiring Team'},
+
+Thank you very much for taking the time to speak with me today about the ${prep.roleTitle} role at ${prep.company}. I thoroughly enjoyed our conversation and learning more about the team's direction${prep.focusTopics.length ? ` and focus on ${prep.focusTopics.join(', ')}` : ''}.
+
+Our discussion reinforced my enthusiasm for joining ${prep.company}. I am confident that my experience and structured approach will allow me to deliver immediate value to the team.
+
+Please let me know if you need any further information or work references. I look forward to hearing about next steps!
+
+Warm regards,
+[Your Name]`;
+
+  async function copyThankYou() {
+    try {
+      await navigator.clipboard.writeText(generatedThankYou);
+      setCopyFeedback('Thank-you note copied to clipboard!');
+      setTimeout(() => setCopyFeedback(''), 3000);
+    } catch {
+      setCopyFeedback('Could not access clipboard.');
+    }
+  }
+
+  return (
+    <div className="modal-scrim career-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <section className="dialog-card practice-dialog" role="dialog" aria-modal="true" aria-labelledby="interview-practice-title">
+        <div className="practice-dialog-header">
+          <div className="practice-header-titles">
+            <small style={{ color: '#8c94a4', fontFamily: 'DM Mono, monospace', fontSize: '8px', letterSpacing: '.5px' }}>
+              {prep.company} · {prep.format}
+            </small>
+            <h2 id="interview-practice-title">{prep.roleTitle} Interview Practice</h2>
+            <p>Practice aloud or typed. The assessment engine evaluates STAR structure, verbal pacing, ownership, and measurable evidence.</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span className={`readiness-gauge ${readinessClass}`}>
+              {readinessScore > 0 ? `${readinessScore}%` : '0%'} Readiness
+            </span>
+            <button className="icon-button" aria-label="Close interview practice" onClick={onClose}>
+              <Icon name="close" size={17} />
+            </button>
+          </div>
+        </div>
+
+        <div className="practice-tabs">
+          <button
+            type="button"
+            className={`practice-tab-btn ${activeTab === 'questions' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('questions')}
+          >
+            <Icon name="file" size={14} /> Mock Questions ({questions.length})
+          </button>
+          <button
+            type="button"
+            className={`practice-tab-btn ${activeTab === 'questionsToAsk' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('questionsToAsk')}
+          >
+            <Icon name="target" size={14} /> Questions to Ask ({questionsToAsk.length})
+          </button>
+          <button
+            type="button"
+            className={`practice-tab-btn ${activeTab === 'cheatsheet' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('cheatsheet')}
+          >
+            <Icon name="sparkles" size={14} /> Cheat Sheet & Thank-You Note
+          </button>
+        </div>
+
+        <div className="practice-body">
+          {activeTab === 'questions' && (
+            <>
+              <div className="question-nav">
+                {questions.map((q, idx) => (
+                  <button
+                    key={q.id}
+                    type="button"
+                    className={`question-step-btn ${idx === selectedIdx ? 'is-active' : ''}`}
+                    onClick={() => setSelectedIdx(idx)}
+                  >
+                    <span>Q{idx + 1}</span>
+                    {q.score > 0 ? <span className="step-score">{q.score}%</span> : null}
+                  </button>
+                ))}
+              </div>
+
+              {currentQ ? (
+                <>
+                  <div className="current-question-box">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <small>{currentQ.category} Question · Q{selectedIdx + 1} of {questions.length}</small>
+                      {questions.length > 1 && (
+                        <button
+                          className="icon-button"
+                          style={{ width: '22px', height: '22px' }}
+                          title="Delete this question"
+                          onClick={() => deleteQuestion(selectedIdx)}
+                        >
+                          <Icon name="close" size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <strong>{currentQ.question}</strong>
+                  </div>
+
+                  <div className="answer-input-area">
+                    <div className="answer-toolbar">
+                      <button
+                        type="button"
+                        className={`dictate-btn ${isListening ? 'is-listening' : ''}`}
+                        onClick={toggleDictation}
+                      >
+                        <Icon name="mic" size={13} /> {isListening ? 'Listening... click to stop' : 'Dictate answer'}
+                      </button>
+                      <span style={{ color: 'var(--muted)', fontSize: '9px', fontFamily: 'DM Mono, monospace' }}>
+                        {wordCount} words · ~{estimatedSeconds}s spoken pace
+                      </span>
+                    </div>
+
+                    <textarea
+                      rows={6}
+                      value={currentQ.userAnswer}
+                      onChange={(e) => handleAnswerChange(e.target.value)}
+                      placeholder="Type or dictate your answer here. For behavioral questions, structure with Situation (context), Task (goal), Action (what you did), and Result (quantifiable impact)..."
+                    />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>
+                        <Icon name="shield" size={12} /> Local evaluation runs in this browser
+                      </span>
+                      <button
+                        type="button"
+                        className="button button-primary"
+                        onClick={handleAssess}
+                        disabled={!currentQ.userAnswer.trim()}
+                      >
+                        <Icon name="sparkle" size={14} /> Assess my answer
+                      </button>
+                    </div>
+                  </div>
+
+                  {currentQ.score > 0 && (
+                    <div className="assessment-result-panel">
+                      <div className="assessment-score-header">
+                        <div>
+                          <span className="score-badge-large">
+                            {currentQ.score}
+                            <small>/ 100</small>
+                          </span>
+                          <span style={{ marginLeft: '10px', fontSize: '10px', fontWeight: 600, color: currentQ.score >= 75 ? '#2e7d58' : currentQ.score >= 50 ? '#9c6c1b' : '#a44d4d' }}>
+                            {currentQ.score >= 75 ? 'Strong Answer' : currentQ.score >= 50 ? 'Solid Foundation' : 'Needs Polish'}
+                          </span>
+                        </div>
+                        {currentQ.starCoverage && (
+                          <div className="star-indicators">
+                            <span className={`star-indicator-pill ${currentQ.starCoverage.situation ? 'is-covered' : ''}`}>
+                              {currentQ.starCoverage.situation ? '✓' : '○'} Situation
+                            </span>
+                            <span className={`star-indicator-pill ${currentQ.starCoverage.task ? 'is-covered' : ''}`}>
+                              {currentQ.starCoverage.task ? '✓' : '○'} Task
+                            </span>
+                            <span className={`star-indicator-pill ${currentQ.starCoverage.action ? 'is-covered' : ''}`}>
+                              {currentQ.starCoverage.action ? '✓' : '○'} Action
+                            </span>
+                            <span className={`star-indicator-pill ${currentQ.starCoverage.result ? 'is-covered' : ''}`}>
+                              {currentQ.starCoverage.result ? '✓' : '○'} Result
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="assessment-columns">
+                        <div className="assessment-col col-strengths">
+                          <h4><Icon name="check" size={13} /> Identified Strengths</h4>
+                          <ul>
+                            {currentQ.strengths.map((s, i) => (
+                              <li key={i}>{s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="assessment-col col-improvements">
+                          <h4><Icon name="target" size={13} /> Areas to Elevate</h4>
+                          <ul>
+                            {currentQ.improvements.length ? (
+                              currentQ.improvements.map((imp, i) => <li key={i}>{imp}</li>)
+                            ) : (
+                              <li>Great coverage! Keep delivery crisp and natural.</li>
+                            )}
+                          </ul>
+                        </div>
+                      </div>
+
+                      {currentQ.suggestedPhrasing && (
+                        <div className="suggested-phrasing-card">
+                          <strong>RECOMMENDED POLISH / BRIDGE</strong>
+                          <p>{currentQ.suggestedPhrasing}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <details style={{ marginTop: '10px', fontSize: '10px', color: 'var(--muted)' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>+ Add another mock question to this interview</summary>
+                    <form onSubmit={addCustomQuestion} style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <input
+                        style={{ flex: 1 }}
+                        value={newQuestionText}
+                        onChange={(e) => setNewQuestionText(e.target.value)}
+                        placeholder="Type a custom interview question..."
+                      />
+                      <select
+                        style={{ width: '130px' }}
+                        value={newQuestionCategory}
+                        onChange={(e) => setNewQuestionCategory(e.target.value as InterviewAssessmentItem['category'])}
+                      >
+                        <option value="behavioral">Behavioral</option>
+                        <option value="technical">Technical</option>
+                        <option value="situational">Situational</option>
+                        <option value="leadership">Leadership</option>
+                      </select>
+                      <button className="button button-secondary" type="submit" disabled={!newQuestionText.trim()}>Add</button>
+                    </form>
+                  </details>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <p>No questions remaining.</p>
+                  <button className="button button-secondary" onClick={() => setSelectedIdx(0)}>Reset view</button>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === 'questionsToAsk' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <strong style={{ fontSize: '12px', color: 'var(--ink)' }}>Questions to Ask the Interviewer</strong>
+                <p style={{ fontSize: '9px', color: 'var(--muted)', margin: '3px 0 10px' }}>
+                  Reverse-interviewing shows deep professional preparation and uncovers whether the team culture fits you.
+                </p>
+              </div>
+
+              <div className="reverse-qa-list">
+                {questionsToAsk.map((q, idx) => (
+                  <div className="reverse-qa-item" key={idx}>
+                    <Icon name="sparkle" size={14} style={{ color: '#686ed7', flexShrink: 0, marginTop: '2px' }} />
+                    <span style={{ flex: 1, fontSize: '10px', lineHeight: 1.5 }}>{q}</span>
+                    <button
+                      className="icon-button"
+                      style={{ width: '20px', height: '20px' }}
+                      title="Remove question"
+                      onClick={() => deleteQuestionToAsk(idx)}
+                    >
+                      <Icon name="close" size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <form onSubmit={addQuestionToAsk} style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                <input
+                  style={{ flex: 1 }}
+                  value={newQuestionToAsk}
+                  onChange={(e) => setNewQuestionToAsk(e.target.value)}
+                  placeholder="Add a custom question to ask the interviewer..."
+                />
+                <button className="button button-secondary" type="submit" disabled={!newQuestionToAsk.trim()}>
+                  <Icon name="plus" size={13} /> Add question
+                </button>
+              </form>
+            </div>
+          )}
+
+          {activeTab === 'cheatsheet' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <strong style={{ fontSize: '12px', color: 'var(--ink)' }}>60-Second Elevator Pitch ("Tell Me About Yourself")</strong>
+                <p style={{ fontSize: '9px', color: 'var(--muted)', margin: '3px 0 8px' }}>
+                  Keep your opening intro under 90 seconds: Current role + Top achievement + Why this specific opportunity.
+                </p>
+                <textarea
+                  rows={3}
+                  value={elevatorPitch}
+                  onChange={(e) => setElevatorPitch(e.target.value)}
+                  placeholder="e.g. For the past 4 years I've specialized in high-performance distributed systems, recently scaling our checkout service to 45k QPS. I'm excited about Acme because..."
+                />
+              </div>
+
+              <div className="thank-you-box">
+                <div className="thank-you-header">
+                  <div>
+                    <strong style={{ fontSize: '11px', color: 'var(--ink)' }}>One-Click Post-Interview Thank-You Email</strong>
+                    <p style={{ fontSize: '8px', color: 'var(--muted)', margin: '2px 0 0' }}>
+                      Send within 24 hours to reaffirm interest, cite a key topic discussed, and stay memorable.
+                    </p>
+                  </div>
+                  <button className="button button-secondary" onClick={copyThankYou}>
+                    <Icon name="sparkles" size={13} /> {copyFeedback || 'Copy email note'}
+                  </button>
+                </div>
+                <pre className="thank-you-text">{generatedThankYou}</pre>
+              </div>
+
+              <div>
+                <strong style={{ fontSize: '12px', color: 'var(--ink)' }}>Post-Interview Debrief Notes</strong>
+                <p style={{ fontSize: '9px', color: 'var(--muted)', margin: '3px 0 8px' }}>
+                  Record what went well, unexpected technical questions asked, and areas to follow up on.
+                </p>
+                <textarea
+                  rows={4}
+                  value={notes}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    onSave({ ...prep, notes: e.target.value });
+                  }}
+                  placeholder="Record immediate impressions right after hanging up..."
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </section>
     </div>
   );

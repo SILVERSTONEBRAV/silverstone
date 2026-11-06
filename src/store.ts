@@ -1,4 +1,4 @@
-import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession } from './types';
 
 const DATABASE_NAME = 'silverstone-local';
 const DATABASE_VERSION = 1;
@@ -59,7 +59,7 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 6,
+    version: 7,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
@@ -68,17 +68,18 @@ export function createInitialState(): LocalAppState {
     careerOpportunities: [],
     socialPosts: [],
     studyCards: [],
+    interviewPreps: [],
   };
 }
 
 function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown };
+  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown; interviewPreps?: unknown };
   if (!Array.isArray(candidate.tasks) || !candidate.tasks.every(isAgentTask)
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 6,
+      version: 7,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
@@ -87,9 +88,10 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       careerOpportunities: [],
       socialPosts: [],
       studyCards: [],
+      interviewPreps: [],
     };
   }
-  if (![2, 3, 4, 5, 6].includes(candidate.version as number) || !Array.isArray(candidate.studySessions)) return null;
+  if (![2, 3, 4, 5, 6, 7].includes(candidate.version as number) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -104,10 +106,12 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!Array.isArray(projects) || !projects.every(isPortfolioProject)) return null;
   const careerOpportunities = candidate.version === 2 || candidate.version === 3 ? [] : candidate.careerOpportunities;
   if (!Array.isArray(careerOpportunities) || !careerOpportunities.every(isCareerOpportunity)) return null;
-  const socialPosts = candidate.version === 5 || candidate.version === 6 ? candidate.socialPosts : [];
+  const socialPosts = candidate.version === 5 || candidate.version === 6 || candidate.version === 7 ? candidate.socialPosts : [];
   if (!Array.isArray(socialPosts) || !socialPosts.every(isSocialPostDraft)) return null;
-  const studyCards = candidate.version === 6 ? candidate.studyCards : [];
+  const studyCards = candidate.version === 6 || candidate.version === 7 ? candidate.studyCards : [];
   if (!Array.isArray(studyCards) || !studyCards.every(isStudyCard)) return null;
+  const interviewPreps = candidate.version === 7 ? candidate.interviewPreps : [];
+  if (!Array.isArray(interviewPreps) || !interviewPreps.every(isInterviewPrep)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
     ? {
@@ -118,7 +122,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 6,
+    version: 7,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
@@ -127,6 +131,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     careerOpportunities,
     socialPosts,
     studyCards,
+    interviewPreps,
   };
 }
 
@@ -237,6 +242,44 @@ function isStudyCard(value: unknown): value is StudyCard {
     && typeof card.lastReviewedAt === 'string' && (!card.lastReviewedAt || Number.isFinite(Date.parse(card.lastReviewedAt)))
     && typeof card.createdAt === 'string' && Number.isFinite(Date.parse(card.createdAt))
     && typeof card.updatedAt === 'string' && Number.isFinite(Date.parse(card.updatedAt));
+}
+
+function isInterviewAssessmentItem(value: unknown): value is InterviewAssessmentItem {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<InterviewAssessmentItem>;
+  const categories = ['behavioral', 'technical', 'situational', 'leadership'];
+  return typeof item.id === 'string'
+    && typeof item.question === 'string' && item.question.trim().length > 0 && item.question.length <= 1000
+    && categories.includes(item.category ?? '')
+    && typeof item.userAnswer === 'string' && item.userAnswer.length <= 10000
+    && typeof item.score === 'number' && Number.isFinite(item.score) && item.score >= 0 && item.score <= 100
+    && Array.isArray(item.strengths) && item.strengths.every((s) => typeof s === 'string')
+    && Array.isArray(item.improvements) && item.improvements.every((s) => typeof s === 'string')
+    && (item.suggestedPhrasing === undefined || typeof item.suggestedPhrasing === 'string')
+    && (item.assessedAt === undefined || typeof item.assessedAt === 'string');
+}
+
+function isInterviewPrep(value: unknown): value is InterviewPrep {
+  if (!value || typeof value !== 'object') return false;
+  const prep = value as Partial<InterviewPrep>;
+  const formats: InterviewFormat[] = ['Screening', 'Technical', 'Behavioral', 'System Design', 'Hiring Manager', 'Case Study'];
+  const validScheduled = typeof prep.scheduledAt === 'string' && (prep.scheduledAt === '' || Number.isFinite(Date.parse(prep.scheduledAt)));
+  return typeof prep.id === 'string'
+    && (prep.opportunityId === undefined || typeof prep.opportunityId === 'string')
+    && typeof prep.roleTitle === 'string' && prep.roleTitle.trim().length > 0 && prep.roleTitle.length <= 160
+    && typeof prep.company === 'string' && prep.company.trim().length > 0 && prep.company.length <= 120
+    && formats.includes(prep.format as InterviewFormat)
+    && validScheduled
+    && typeof prep.locationOrLink === 'string' && prep.locationOrLink.length <= 500
+    && typeof prep.interviewers === 'string' && prep.interviewers.length <= 500
+    && Array.isArray(prep.focusTopics) && prep.focusTopics.every((t) => typeof t === 'string')
+    && typeof prep.jobContext === 'string' && prep.jobContext.length <= 10000
+    && Array.isArray(prep.questions) && prep.questions.every(isInterviewAssessmentItem)
+    && Array.isArray(prep.questionsToAsk) && prep.questionsToAsk.every((q) => typeof q === 'string')
+    && typeof prep.notes === 'string' && prep.notes.length <= 10000
+    && typeof prep.readinessScore === 'number' && Number.isFinite(prep.readinessScore)
+    && typeof prep.createdAt === 'string' && Number.isFinite(Date.parse(prep.createdAt))
+    && typeof prep.updatedAt === 'string' && Number.isFinite(Date.parse(prep.updatedAt));
 }
 
 export function createWorkspaceBackup(state: LocalAppState): string {

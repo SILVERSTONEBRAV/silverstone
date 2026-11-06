@@ -21,6 +21,7 @@
 - Demo dashboard values are illustrative. No email, calendar, social, messaging, finance, camera, or AI integrations are connected. Voice uses browser speech APIs only; there is no connected AI voice service or saved audio recording.
 - The voice panel supports browser click-to-talk, typed messages, device text-to-speech, and simple local task/note/focus/day-summary intents. Browser coverage and processing location vary; native OS integration and secure storage are pending.
 - Today dashboard is wired to live local records: dynamic 7-day study time bar chart from completed focus sessions, career pipeline stage breakdown track (Exploring, Preparing, In review, Offer), next deadline runway, interactive Current Radar prioritizing due recall cards, study goals, upcoming deadlines, and content review times, and an Activity timeline fed by actual local capture history.
+- Interview preparation and assessment simulator in the Career module: manual interview setup with role, company, format, interviewers, date/time, link, and focus topics; interactive mock question simulator with live speech dictation; multi-factor assessment engine evaluating STAR structure (Situation, Task, Action, Result), word count, speaking pace, personal ownership, quantitative evidence, strengths, and targeted improvement suggestions; format-specific reverse-interview questions to ask the team; 60-second elevator pitch notes; one-click follow-up thank-you email generator; and Today Radar integration for upcoming scheduled interviews.
 - `npm run build` completes successfully. No Rust toolchain was available in the workspace, so the Rust API scaffold has not been compiled.
 
 ## Remaining to reach a first usable release
@@ -107,7 +108,7 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 - [ ] **CAREER-001 · P1** Build verified fact/evidence library for education, experience, skills, and achievements.
 - [~] **CAREER-002 · P1** Build opportunity intake, source link, fit notes, eligibility fields, and deadline tracker. Local job/scholarship intake stores source, fit notes, deadline, and stage; structured eligibility fields remain.
 - [~] **CAREER-003 · P1** Build application pipeline and next-action views. Local stage tracking, sorted deadlines, and pipeline counters exist; next-action plans and reminders remain.
-- [ ] **CAREER-004 · P1** Generate CV, cover letter, essay, and interview-prep drafts with evidence references and unsupported-claim warnings.
+- [~] **CAREER-004 · P1** Generate CV, cover letter, essay, and interview-prep drafts with evidence references and unsupported-claim warnings. Interview prep setup, question simulator, live speech dictation, STAR assessment engine, reverse-interview questions, and thank-you drafts are implemented; CV/cover letter drafting remains.
 - [ ] **CAREER-005 · P1** Build scholarship eligibility checklist and document checklist.
 - [ ] **CAREER-006 · P1** Add email triage and reply drafts; keep sending behind explicit approval.
 - [ ] **CAREER-007 · P1** Build deadlines/pipeline dashboard and reminder preferences.
