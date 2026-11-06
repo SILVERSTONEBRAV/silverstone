@@ -20,15 +20,21 @@ See [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for the Supabase SQL migration, Verce
 - Work offline for local capture and editing, and explain what still needs a connection.
 - Use focused workflows over one unrestricted agent with broad access.
 - Verify actions and report uncertainty instead of claiming success from an attempted operation.
-- Keep transient camera input and derived visual notes out of saved history unless the user explicitly saves them.
+- Never save raw camera frames. In an explicitly enabled “Save observation notes” session, persist timestamped, provenance-tagged visual notes to online Observation Memory; keep them labeled as unverified observations and separate from verified profile facts.
+
+## Target data and permission model
+
+The intended product is cloud-first: Supabase is the online source of truth for account records, the master CV/evidence profile, opportunities, applications, observation notes, and published portfolio content. Unsent email replies and unsubmitted application, portfolio, and social drafts remain on the user's device unless explicitly sent or published. Offline changes show a pending state until the server confirms them. This is the target architecture; the current preview still uses IndexedDB and a manually uploaded JSONB cloud copy and must be migrated before these integrations are live.
+
+Email will connect through delegated Gmail or Outlook OAuth. Silverstone may read and organize connected messages, but a reply is sent only after the user reviews and approves the exact recipients and content. Career discovery will use public job-board APIs and approved sources, cite each requirement, and report meets/missing/unknown rather than promise eligibility. The Portfolio module will become the publishing console for [Bravine's public portfolio](https://bravinemunialo.vercel.app/): device-only drafts, exact preview, approval, publish, and verified deployment status.
 
 ## Main areas
 
 - **Today:** agenda, priorities, open-time suggestions, reminders, and daily check-in.
 - **Study:** goals, study blocks, notes, quizzes, revision, and progress.
-- **Inbox:** selected email text, local triage, reply starters, editable drafts, search, and follow-up tracking. Provider connection and sending remain unimplemented.
-- **Career:** job and scholarship tracking, source-linked eligibility and document checklists, per-opportunity next actions in Today Radar, a local career evidence library, interview Learn and Q&A modes, local answer feedback, and a reusable STAR story bank. Application Draft Studio creates editable CV excerpts, cover letters, and scholarship statement outlines from selected evidence records, keeps source links, and flags unverified or missing records. Drafts are local templates, not AI-generated or submitted applications.
-- **Portfolio:** project records, case studies, draft updates, previews, and publishing history.
+- **Inbox:** target workflow is a connected Gmail/Outlook inbox with online message metadata and device-only reply drafts. Sending requires approval of the exact message; the current preview is still manual paste-in and does not send.
+- **Career:** target workflow discovers current jobs and scholarships, matches them against a sourced master CV/profile, and creates device-only tailored drafts with requirement citations. The current preview has manual tracking, interviews, and template drafts; it does not search external opportunities or use a model.
+- **Portfolio:** the target is a content editor/publisher for the live personal website, with device-only drafts and approval-gated publication. The current preview only stores local project notes and versions.
 - **Studio:** social content drafts, platform previews, approvals, scheduling, post status, and available insights.
 - **Capture and Library:** text, voice, images, links, files, extracted metadata, and searchable personal knowledge.
 - **Memory and Research:** inspectable facts and preferences, source-backed answers, decision notes, and saved research.
@@ -49,14 +55,14 @@ Approvals are bound to the specific action and content shown to the user. If the
 
 Observation Mode is read-only by itself. Each source has an independent `Off`, `Observe`, `Suggest`, or `Act` setting, with a visible status and immediate pause control. `Act` still follows the risk-based approval policy. Finance and brokerage access starts read-only; device sensors such as microphone, camera, clipboard, location, and health data require separate opt-in. Connector coverage depends on official APIs, account type, platform permissions, and provider approval, so the app will state supported coverage before connection rather than promise universal account access.
 
-Live camera processing has a separate session control from general Observation Mode. “No-save” means the app does not create or retain the media file or visual notes. Cloud-assisted processing still transmits the necessary frames for inference; strict device-only handling requires local vision inference. The selected processing route must be visible before camera access starts.
+Live camera processing has a separate session control from general Observation Mode. Raw camera frames are never saved. The user can explicitly enable session-level **Save observation notes** to keep timestamped, searchable visual notes in online Observation Memory; those notes are labeled unverified and can be inspected, corrected, or deleted. Cloud-assisted processing transmits sampled frames to the selected vision service, so the route must be shown before camera access starts; device-only inference requires a local vision model. Camera access requires HTTPS and browser permission, with an in-app active indicator and immediate stop control.
 
 ## Platform and technology direction
 
 - **Frontend:** React, TypeScript, and Vite as a responsive single-page application.
 - **Web:** Progressive web app with cached application assets and IndexedDB for offline data.
 - **Desktop and mobile:** Tauri 2 packages the shared interface; validate native capabilities on target operating systems before committing to this route.
-- **Hosted identity and first cloud copy:** Supabase Auth and PostgreSQL with per-user RLS; the browser uses a publishable key and revision-checked manual workspace writes.
+- **Hosted identity and online records:** Supabase Auth, relational PostgreSQL, private Storage, per-user RLS, and automatic sync. The current manual JSONB cloud-copy feature is a prototype to migrate.
 - **Backend:** Rust with Axum and Tokio for trusted policy, durable workflows, jobs, and integrations as those services are implemented.
 - **Server data:** PostgreSQL with SQLx for the Rust service; private object storage for uploads and generated documents.
 - **Device data:** SQLite for Tauri applications; IndexedDB for the browser PWA.

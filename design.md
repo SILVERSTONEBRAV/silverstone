@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Scope:** Product, interface, architecture, offline behavior, integrations, and release plan
-**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, a manual local Inbox with email triage and reply drafts, career opportunity tracking, source-linked scholarship eligibility and document checklists, per-opportunity next actions with local Today Radar surfacing, a local career evidence library with user-confirmed source checks, and an Application Draft Studio that creates editable CV excerpts, cover letters, and scholarship statement outlines from selected records with missing/unverified-source warnings. Social post drafts with local review times, manual active-recall cards with local review intervals, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history are also implemented. The Career workspace includes manually configured interview plans, separate format-aware Learn and mock Q&A modes, autosaved mock answers, browser dictation, a transparent deterministic local assessment rubric, editable STAR stories, a prep checklist, reverse-interview prompts, pitch/debrief notes, and Study recall handoff. Optional Supabase email-link auth, passkey sign-in, and revision-checked manual workspace copy/restore are implemented; credentials and the initial SQL migration still need to be configured for deployment. Workspace backup/restore includes local records and linked draft references. The minimal Rust health API is scaffolded; desktop/mobile packaging, automatic sync, AI-backed assessment, and external integrations remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
+**Implementation status:** Browser app shell now has IndexedDB-backed local tasks, notes, a manual local Inbox with email triage and reply drafts, career opportunity tracking, source-linked scholarship eligibility and document checklists, per-opportunity next actions with local Today Radar surfacing, a local career evidence library with user-confirmed source checks, and an Application Draft Studio that creates editable CV excerpts, cover letters, and scholarship statement outlines from selected records with missing/unverified-source warnings. Social post drafts with local review times, manual active-recall cards with local review intervals, a basic weekly study goal/session log, offline shell caching, browser-native voice, and local portfolio drafts with preview and version history are also implemented. The Career workspace includes manually configured interview plans, separate format-aware Learn and mock Q&A modes, autosaved mock answers, browser dictation, a transparent deterministic local assessment rubric, editable STAR stories, a prep checklist, reverse-interview prompts, pitch/debrief notes, and Study recall handoff. Optional Supabase email-link auth, passkey sign-in, and revision-checked manual workspace copy/restore are implemented; new cloud uploads now exclude email, application, portfolio, and social drafts while restores preserve the device's drafts. Older deployed cloud rows may still contain drafts until replaced from an updated device. Workspace JSON backup/restore remains a local-file operation. The minimal Rust health API is scaffolded; cloud-first relational sync, the Gmail/Outlook connector, opportunity discovery, live portfolio publishing, camera observation, and AI remain unstarted. Rust code has not been compiled because the toolchain is unavailable in the workspace.
 
 ## 1. Product vision
 
@@ -57,10 +57,13 @@ Keep original assets distinct from generated transcripts, OCR, summaries, and st
 ### 4.3 Career and scholarships
 
 - Save opportunities and extract organization, role/program, location, eligibility, deadline, and source link.
+- Discover opportunities on a schedule from public employer and scholarship sources. Prefer first-party board APIs; use a rate-limited, source-allowlisted page reader only where access is permitted. Preserve the original URL, retrieval time, and exact requirement excerpts, and mark closed or stale postings.
+- Compare each job or award with the user's current profile and master CV. Show each requirement as **meets**, **missing**, or **unknown**, cite the supporting profile fact or source text, and explain the match. Treat this as decision support, never a guarantee of eligibility.
+- Tailor a CV or scholarship response from sourced facts and the posting's requirements. Keep the generated, unsubmitted draft on the user's device; send only relevant source excerpts to the configured AI provider for generation and disclose that processing route.
 - For scholarships, maintain editable eligibility checks and document readiness per opportunity. Treat suggested checklist entries as prompts only, verify each requirement against the official award information, and attach the source to each checked criterion.
 - Keep one explicit next action and optional due date per opportunity; show the nearest dated action in Today Radar, and reserve push notifications for a later reminder-preferences milestone.
-- Triage selected email messages offline, keep reply drafts separate from sending, and require explicit approval before any future provider-connected send action.
-- Keep education, experience, skills, achievements, credentials, and projects in a local evidence library; verification is a user confirmation against a source label or link.
+- Connect Gmail or Outlook through delegated OAuth with the narrowest available scopes. Keep the mail provider as the inbox source of truth; fetch message bodies when needed and store only selected online metadata, sync cursors, and action status in Silverstone.
+- Keep education, experience, skills, achievements, credentials, and projects in a private online evidence library; verification is a user confirmation against a source label or link.
 - Compare requirements with a verified profile and evidence-backed experience facts.
 - Generate tailored CVs, cover letters, essays, checklists, and interview notes.
 - The current local Draft Studio creates editable CV excerpts, cover letters, and scholarship statement outlines from selected evidence. It copies the chosen record text, stores source record IDs, and flags deleted or not-yet-reviewed records. It does not write model-generated claims, determine whether claims are supported by source documents, or submit the application.
@@ -73,16 +76,18 @@ Keep original assets distinct from generated transcripts, OCR, summaries, and st
 
 ### 4.4 Email and personal administration
 
-- Summarize and classify messages, identify dates/action items, and prepare reply drafts.
+- Summarize and classify connected messages, identify dates/action items, and prepare reply drafts. Keep reply drafts on the user's device until the user sends or explicitly exports them.
+- Before sending, show the exact recipients, subject, body, attachments, and sending account. Send only after the user approves that specific message, and record the provider's response without treating acceptance as proof of delivery.
 - Track appointments, renewals, reminders, and household tasks.
 - Keep sending, booking, payments, and commitments behind explicit action policies.
 
 ### 4.5 Portfolio
 
 - Store projects, evidence, skills, images, outcomes, links, and case-study sections.
+- Treat Silverstone's Portfolio module as the private editor and publishing console for Bravine's public portfolio at `https://bravinemunialo.vercel.app/`. Keep unpublished edits as device-only drafts; put approved published content in the online content store consumed by the public site.
 - Draft portfolio updates from user notes or selected project records.
 - Show a preview and a diff against the live content.
-- Publish through a configured repository/deployment integration only after approval; preserve version history and provide a rollback path.
+- Publish an exact, user-approved version through a least-privilege content API or reviewable repository/deployment change; preserve version history, verify the resulting public URL, and provide rollback.
 
 ### 4.6 Creator Studio and social publishing
 
@@ -186,13 +191,13 @@ Potential observation sources, subject to operating-system and provider capabili
 | Security notices and selected inbound content | Explain suspicious links, impersonation cues, unusual payment requests, or provider security alerts | Advisory only with evidence and uncertainty; never collect passwords/MFA codes or change security settings automatically |
 | Device activity and diagnostics | Foreground app, optional window title, user-set focus sessions, battery, storage, connectivity, and selected device model/OS data | Explicit OS permission, app/site exclusions, no keystroke capture, no hidden screen recording or remote control |
 | Notifications | Source app, timestamp, category, and optionally selected content | Per-app opt-in; allow sensitive-app exclusions and content masking |
-| Camera, microphone, and clipboard | Camera may provide temporary live visual context; microphone/clipboard remain separate inputs | Off by default; visible, time-bounded session; no ambient audio or persistent clipboard history |
+| Camera, microphone, and clipboard | Camera can provide live visual signals and, in an explicitly enabled session, save derived notes to cloud memory; microphone/clipboard remain separate inputs | Camera off by default, visible time-bounded session; raw frames never persisted; notes are provenance-tagged and user-deletable; no ambient audio or persistent clipboard history |
 | Location, travel, and environment | Coarse location or a user-selected trip context for timely reminders | Off by default; collect only for a defined task, with short retention |
 | Health and wearables | User-selected sleep/activity summaries to schedule routines and study sessions | Off by default; wellbeing support only, not diagnosis or treatment |
 | Bank and brokerage accounts | Balances, transactions, holdings, and user-defined threshold alerts where official access exists | Read-only by default; no transfers, orders, or investment decisions |
 | Smart home and connected devices | User-selected status and routine triggers | Add later; explicit per-device permissions and confirmation for locks, alarms, purchases, or other consequential controls |
 
-Use a metadata-first event pipeline: record the source, time, permission mode, minimal event type, retention deadline, and a link to the original item. Extracted details must retain provenance and confidence. Correlate events into a reviewable timeline—for example, an email deadline plus a calendar block plus a study goal—and explain why each suggestion appeared. A correlation is a signal, not a verified personal fact; do not add it to durable memory without user confirmation.
+Use a metadata-first event pipeline: record the source, time, permission mode, minimal event type, retention deadline, and a link to the original item. Extracted details must retain provenance and confidence. When the user explicitly enables **Save observation notes** for a camera session, Silverstone may write derived, timestamped notes directly to the online Observation Memory without asking for each note. Mark them as observations, keep their source and confidence, and never promote them to verified profile facts without user confirmation. Correlate events into a reviewable timeline—for example, an email deadline plus a calendar block plus a study goal—and explain why each suggestion appeared.
 
 The user must be able to pause all observation immediately, pause one source, inspect recent reads and derived signals, set quiet hours, exclude sources or content categories, select local-only processing where supported, set retention, and export/delete records. Never collect passwords, authentication codes, payment-card data, or hidden screen contents. Mask password managers, MFA prompts, and financial screens from any optional visual context capture. Do not promise universal access: validate each connector against official APIs, platform permissions, account eligibility, and current terms before adding it.
 
@@ -207,7 +212,7 @@ Connector-specific planning constraints:
 
 Connect user-approved records into a private context graph: goals, tasks, people, projects, events, documents, applications, posts, and evidence. Resolve duplicates conservatively, retain source links, and show conflicting details instead of silently choosing one. Use this graph to answer questions such as “what is waiting on me?”, “what can I study in this 30-minute gap?”, or “which portfolio project supports this application requirement?”
 
-Proactive help should be thresholded by value and confidence. Show a concise reason and evidence, suggest one useful next action, and learn from accept/edit/snooze/dismiss choices only as an inspectable preference. Ask before creating a durable memory, changing a schedule, contacting a person, submitting an application, publishing, or changing an external account. Prefer a quiet daily/weekly briefing when a signal is useful but not urgent.
+Proactive help should be thresholded by value and confidence. Show a concise reason and evidence, suggest one useful next action, and learn from accept/edit/snooze/dismiss choices only as an inspectable preference. Ask before promoting derived data to a verified profile fact, changing a schedule, contacting a person, submitting an application, publishing, or changing an external account. The explicit session-level **Save observation notes** setting may persist camera-derived text without a per-note prompt, but entries remain unverified and correctable. Prefer a quiet daily/weekly briefing when a signal is useful but not urgent.
 
 Add a digital safety helper for user-selected messages, links, and official account alerts. It can explain suspicious cues and suggest verification through a known official channel, but it must label uncertainty and never auto-click links, forward messages, lock accounts, or change security settings.
 
@@ -215,16 +220,16 @@ Add a digital safety helper for user-selected messages, links, and official acco
 
 Offer opt-in help for device health and supported account setup: explain storage/battery/connectivity problems, find relevant official manuals or support pages using the user-selected model and operating system, and guide through troubleshooting one step at a time. Use local diagnostics where possible and let the user choose which values to share. Do not silently scan installed apps, collect serial numbers, change system settings, install software, reset devices, or execute terminal commands. Show the exact proposed change and require confirmation before applying a consequential fix.
 
-### 4.17 Ephemeral live visual context
+### 4.17 Live visual observation and memory
 
-Let the user start a camera session to ask what is visible, get help with an object or setup, or receive temporary visual context. The app may process a live stream or sample frames in memory without creating a photo/video file. This requires camera permission, a persistent in-app “camera active” indicator, the operating system's camera indicator, and an obvious stop control. It is foreground-only and ends when stopped, timed out, the app becomes hidden/backgrounded, or permission is revoked.
+Let the user start a foreground camera session that works as a real-time visual sensor: Silverstone can observe the scene, make concise timestamped notes, and save those notes to online Observation Memory for later search. Starting requires browser/OS camera permission, a visible in-app “camera active” indicator, an elapsed-time/session label, and an immediate stop control. Keep the camera active only while the session is visibly running; stop all media tracks when stopped, timed out, the app is hidden/backgrounded, or permission is revoked. Browser camera access requires HTTPS and user permission ([getUserMedia requirements](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)); never attempt silent or hidden activation.
 
 Provide two distinct modes:
 
-- **Local ephemeral:** analyze frames on-device where a suitable vision model is installed. Raw frames, thumbnails, embeddings, transcripts, and inferred observations stay in volatile memory and are discarded after the response/session; nothing is added to history or memory unless the user explicitly saves it.
-- **Cloud-assisted ephemeral:** send only the frames needed for the current request to the selected model service. Show this route before starting. Do not write the frames to app storage, logs, analytics, sync, or backups; clear application buffers after processing. Explain that data is transmitted for inference and that provider-side handling depends on the selected service and its current terms. Do not label this “never leaves the device.”
+- **Local vision + saved notes:** analyze a live sample stream on-device where a suitable model is installed. Keep raw frames only in volatile memory. If **Save observation notes** is on, sync derived text notes and provenance to the user's cloud memory; do not upload frames.
+- **Cloud vision + saved notes:** send only sampled frames needed for inference to the configured vision service, then discard local frame buffers. Save derived notes to online Observation Memory only when the user has enabled that session mode. Show the cloud route before starting and explain provider-side handling; Silverstone must not claim the frames never leave the device.
 
-The no-save setting applies to derived visual notes as well as raw media: do not store scene descriptions, OCR, faces, or object detections as memory unless the user chooses “Save this.” Do not enable audio with the camera unless the user separately starts microphone capture. Do not identify people or infer sensitive traits. Encourage pointing the camera at the item or scene the user wants help with, and avoid capturing bystanders or private screens. If the chosen service cannot meet the configured retention requirement, disable cloud-assisted mode and explain why.
+Raw images, video, thumbnails, and frame embeddings are never saved by Observation Mode. The separate **Save observation notes** setting controls derived text: when enabled, save timestamped notes with session ID, camera source, confidence, retention, and an **unverified observation** label. Make notes searchable but keep them separate from user-confirmed profile facts; let the user inspect, correct, export, and delete them. Do not enable audio unless the user separately starts microphone capture. Do not identify people or infer sensitive traits. Encourage pointing the camera at the item or scene the user wants help with, and avoid capturing bystanders or private screens. If the chosen service cannot meet the configured retention requirement, disable cloud-assisted mode and explain why.
 
 ## 5. Information architecture and interface
 
@@ -275,17 +280,18 @@ Check repository licenses before reusing source code. Use screenshots and live e
 - Implement hardware and OS observation only through explicit platform capabilities. Prototype notification access, foreground-app context, background execution, location, and health APIs per operating system; do not assume the web app or every Tauri target can provide the same signals.
 - Prototype microphone, camera/image selection, notifications, share sheets, secure storage, and background behavior on target platforms before locking in mobile packaging. Tauri plugin coverage differs across operating systems. If a critical mobile capability cannot meet quality requirements, use a dedicated native shell while keeping the same API and design tokens.
 
-### Local and server storage
+### Cloud-first and local storage
 
-- Web PWA: service worker caches the app shell and IndexedDB stores structured local data and selected assets.
-- Tauri client: SQLite stores local records and an outbox of pending changes.
-- Server: Rust API, PostgreSQL, and private object storage are the shared durable source for synced records.
-- Use a versioned sync protocol, per-device identifiers, idempotency keys, and explicit sync status.
+- Canonical user records live online in Supabase Auth/PostgreSQL and private object storage, protected by per-user RLS and automatic authenticated sync. Migrate away from the current single JSONB workspace-copy prototype to relational, versioned records before integrating live accounts.
+- Keep unsent email replies and unsubmitted application, portfolio, and social drafts in IndexedDB or Tauri SQLite on the originating device. Drafts stay out of cloud backup/sync unless the user explicitly exports, sends, or publishes them.
+- The PWA caches its app shell and a clearly marked, read-only subset of recently synced records. Offline capture may be queued locally with a pending label until the server confirms receipt; do not call a cloud mutation saved before acknowledgment.
+- Tauri client: SQLite stores device-only drafts, short-lived caches, and an explicit pending-sync outbox.
+- Use a versioned sync protocol, per-device identifiers, idempotency keys, conflict resolution, and visible sync status.
 - Encrypt credentials with platform secure storage; assess local database/media encryption before storing highly sensitive material.
 
 ### Offline behavior
 
-Available offline: previously synced tasks, plans, saved study material, local search, drafts, and new captures. Image and voice captures can be stored locally and processed when connected. Cached records show their last sync time.
+Available offline: the app shell, read-only cached online records, local-only drafts, and new captures queued with a visible pending state. Cached records show their last sync time; queued records become canonical only after the server acknowledges sync.
 
 Requires a connection: model reasoning unless a local model is later installed, email/calendar refresh, connected-platform data, cross-device sync, and external publishing.
 
@@ -303,7 +309,7 @@ An offline post can remain a local draft or proposed schedule. It is not a confi
 
 ### Services
 
-- Hosted web workspace: Supabase Auth and Postgres provide email-link sign-in, optional passkeys, and a user-owned JSONB workspace row with RLS. Browser cloud writes are explicit and revision-checked; the publishable key is the only Supabase key exposed to the client.
+- Hosted web workspace: Supabase Auth, relational Postgres, private Storage, and per-user RLS provide the online source of truth. The current app's JSONB workspace row and manual copy are a bootstrap prototype to migrate; only the Supabase URL and publishable key belong in the browser.
 - Rust API: Axum + Tokio, authentication, validation, business rules, policy gate, sync endpoints, and integration callbacks.
 - Database access: PostgreSQL + SQLx migrations and typed query practices.
 - Worker: scheduled and retryable jobs stored in PostgreSQL; lease jobs safely and record every attempt.
@@ -317,7 +323,7 @@ An offline post can remain a local draft or proposed schedule. It is not a confi
 - Give personal facts source, confidence, scope, last-confirmed time, valid-from/valid-until, and a correction history.
 - Retrieve by exact match and semantic relevance, then filter by user-selected workspace, sensitivity, recency, and task purpose.
 - Show the material sources used in a response and let the user inspect or correct them.
-- Never add a derived inference to verified memory without user confirmation. Keep memory search scoped; do not send a whole personal archive to a model for every request.
+- Keep user-confirmed facts separate from derived observations. A camera session with **Save observation notes** explicitly enabled may add provenance-tagged, unverified notes to Observation Memory automatically; do not promote them to verified memory without user confirmation. Keep memory search scoped; do not send a whole personal archive to a model for every request.
 
 ### Proactive orchestration
 

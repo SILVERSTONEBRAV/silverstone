@@ -34,7 +34,7 @@ The interface is a working prototype, not yet a connected personal agent. The ne
 3. **Compile and extend the Rust service.** Install/validate the Rust toolchain, compile the health service, then add authentication, durable records, sync, jobs, action approvals, and audit history.
 4. **Connect an AI provider safely.** Add a provider adapter for chat, structured intent, retrieval, citations, and multimodal inputs; keep secrets server-side and enforce action policy in Rust. Include a local-model path only if chosen hardware meets performance needs.
 5. **Finish core workflows.** Expand study plans with recurring availability, breaks, AI tutoring, quizzes, and material-linked summaries; add evidence-backed CV, scholarship, and email drafts plus eligibility/document checklists; extend portfolio drafts with linked evidence, repository/deployment previews, and approved release; add social-specific variants, media, account connections, a timezone-aware calendar, approvals, and external scheduling.
-6. **Package and validate voice/device support.** Check browser and OS speech behavior, microphone disclosures/permissions, no-save handling for live camera context, file/share capture, and native notification restrictions.
+6. **Package and validate voice/device support.** Check browser and OS speech behavior, microphone disclosures/permissions, raw-camera-frame deletion and session-level observation-note consent, file/share capture, and native notification restrictions.
 7. **Add connectors with least privilege.** Implement each account separately after reviewing scopes, app approval, quotas, token revocation, and supported account types. Keep finance read-only and message sending/application submission/publishing approval-gated.
 8. **Harden and release.** Add workflow evaluations, accessibility review, server backup/restore, sync and action reconciliation, operational visibility, and a privacy/permission walkthrough before release.
 
@@ -70,7 +70,7 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 ## Phase 2 — Rust service foundation
 
 - [~] **CORE-001 · P0** Create Rust workspace, Axum/Tokio API, configuration, structured errors, and health endpoints. Workspace and loopback health route are scaffolded; structured errors and compilation remain.
-- [~] **CORE-002 · P0** Design PostgreSQL schema and SQLx migration process for accounts, tasks, captures, workflows, approvals, and audit events. A Supabase JSONB workspace table, owner-only RLS, and revision-checked save function are provided; relational service schema and SQLx migrations remain.
+- [~] **CORE-002 · P0** Design PostgreSQL schema and SQLx migration process for accounts, tasks, captures, workflows, approvals, and audit events. The current Supabase JSONB row is a manual-copy prototype only; design and migrate relational online records with per-user RLS, separate device-only drafts, and automatic sync before adding live connectors.
 - [~] **CORE-003 · P0** Implement authentication, sessions, account deletion/export, and server-side secret handling. Supabase email-link sessions and experimental passkeys are scaffolded; account lifecycle, server-side secrets, and configured credentials remain.
 - [ ] **CORE-004 · P0** Implement object storage upload/download with scoped, short-lived access.
 - [ ] **CORE-005 · P0** Implement device registration, sync cursor, version fields, idempotency keys, and sync outbox endpoints.
@@ -88,7 +88,7 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 - [~] **APP-004 · P0** Add text, link, image, file, and voice-note capture. Text and browser-transcribed voice-origin notes are stored locally; image/file capture and the reviewed extraction pipeline remain.
 - [~] **APP-005 · P0** Store source metadata, user-entered versus extracted values, confidence, and provenance. Text modality, source surface, context, timezone, language, and retention are stored; extraction/provenance review remains.
 - [ ] **APP-006 · P1** Add OCR/transcription/extraction pipeline with user correction before structured conversion.
-- [~] **APP-007 · P0** Implement cached offline data, local drafts, pending-sync queue, last-sync timestamps, and conflict resolution screen. IndexedDB local workspace and static app-shell caching exist; sync outbox/conflict handling remain.
+- [~] **APP-007 · P0** Implement cloud-first records with cached offline reads, device-only drafts, pending-sync queue, last-sync timestamps, and conflict resolution screen. Current IndexedDB workspace and static app-shell caching exist; automatic online sync, local-only draft isolation, sync outbox, and conflict handling remain.
 - [~] **APP-008 · P1** Add retention controls, sensitivity labels, and delete/export flows for captures and derivatives. Clear-all and validated local workspace backup/restore exist; per-capture retention, sensitivity controls, and derivative deletion remain.
 - [ ] **APP-009 · P0** Build Observation Mode controls: source-by-source status, last-read timeline, category exclusions, retention, pause one/pause all, and clear active-sensor indicator.
 - [~] **APP-010 · P1** Add conversational voice input and spoken output. Foreground browser speech recognition, transcript display, selectable device voices, spoken replies, and voice UI exist; browser compatibility, accessibility, permission flow, and device-local recognition need validation.
@@ -107,11 +107,11 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 ## Phase 5 — Career, scholarships, and email
 
 - [~] **CAREER-001 · P1** Build verified fact/evidence library for education, experience, skills, and achievements. Local typed records, source labels/links, user-confirmed verification stamps, editing, deletion, search, filters, and version-13 workspace migration are implemented. The Application Draft Studio links selected records to CV excerpts, cover letters, and scholarship statement outlines; attachments, portfolio claim references, and generated-claim checks remain.
-- [~] **CAREER-002 · P1** Build opportunity intake, source link, fit notes, eligibility fields, and deadline tracker. Local job/scholarship intake stores source, fit notes, deadline, and stage; scholarship opportunities now support source-linked eligibility checks and per-document status. A reusable personal eligibility profile and automated criteria extraction remain.
+- [~] **CAREER-002 · P1** Discover and track jobs and scholarships against the user's sourced master CV/profile. Local manual intake stores source, fit notes, deadline, and stage; scholarships support source-linked eligibility checks and per-document status. Scheduled public-source ingestion, stale/closed checks, requirement extraction, and transparent meets/missing/unknown matching remain.
 - [~] **CAREER-003 · P1** Build application pipeline and next-action views. Local stage tracking, sorted deadlines, pipeline counters, per-opportunity next action/date, and due/overdue Today Radar surfacing exist; notification delivery and reminder preferences remain.
-- [~] **CAREER-004 · P1** Generate CV, cover letter, essay, and interview-prep drafts with evidence references and unsupported-claim warnings. Manual interview prep, dedicated format-aware Learn and mock Q&A modes, autosaved answers, browser dictation, a transparent local assessment rubric, STAR story bank, prep checklist, reverse-interview questions, thank-you draft, Study recall handoff, and editable local evidence-based CV/cover-letter/scholarship outline templates are implemented. Drafts flag unverified or missing linked records; model-backed feedback, claim-level unsupported-fact detection, and application submission remain.
+- [~] **CAREER-004 · P1** Tailor device-only CV and scholarship drafts to live opportunity requirements using cited master-CV evidence. Manual interview prep and local template drafts exist. A private online master profile, opportunity-linked model generation, claim-to-source mapping, unsupported/unknown warnings, document export, and reviewed application handoff remain.
 - [~] **CAREER-005 · P1** Build scholarship eligibility checklist and document checklist. Editable per-scholarship criteria have To check/Meets/Does not meet states, notes, and source links; document rows have Not started/In progress/Ready/Submitted states. Suggested prompts are explicitly examples to check against the official award page; file attachments and automatic official-requirement extraction remain.
-- [~] **CAREER-006 · P1** Add email triage and reply drafts; keep sending behind explicit approval. Manual local intake, user-set triage fields, a transparent keyword category hint, fixed editable reply starters, draft copying, search/filters, backup, and Today Radar follow-up dates exist; mail-provider connection, model-backed review, and approval-gated send remain.
+- [~] **CAREER-006 · P1** Connect Gmail/Outlook for online inbox triage and device-only reply drafts; send only after approval of exact recipients, subject, body, attachments, and account. Manual local paste-in, user-set triage, keyword hints, editable starters, search/filters, and follow-up dates exist; OAuth, online sync, model-assisted review, approval-bound provider send, and outcome reconciliation remain.
 - [ ] **CAREER-007 · P1** Build deadlines/pipeline dashboard and reminder preferences.
 
 ## Phase 6 — Portfolio studio
@@ -120,8 +120,8 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 - [~] **PORT-002 · P1** Build portfolio project editor and live preview. Local editor, text preview, and draft list exist; rendered Markdown and asset handling remain.
 - [ ] **PORT-003 · P1** Generate portfolio change proposals from selected notes/projects; show source evidence and content diff.
 - [~] **PORT-004 · P1** Implement version history and rollback. Up to 30 prior versions are saved and can be loaded into the editor; direct rollback and audit history remain.
-- [ ] **PORT-005 · P1** Connect portfolio repository/deployment target using least privilege.
-- [ ] **PORT-006 · P1** Require approval for release; record published URL, commit/deployment reference, and result.
+- [ ] **PORT-005 · P1** Connect Silverstone Portfolio to `bravinemunialo.vercel.app` as the private editor for the live personal site. Inspect the site source repository and current content store; choose a published-content API or reviewable repository/deployment integration with least privilege.
+- [ ] **PORT-006 · P1** Keep unpublished content drafts device-only. Require approval for the exact release; record published version, URL, commit/deployment reference, and verified result; support rollback.
 
 ## Phase 7 — Social content and scheduling
 
@@ -155,7 +155,7 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 ### Observation Mode and connector work
 
 - [ ] **OBS-001 · P0** Complete connector feasibility matrix: official API, account eligibility, platform approval, scopes, quotas/cost, supported data/actions, OS limitations, and fallback for each target platform.
-- [ ] **OBS-002 · P0** Define event schema and retention lifecycle for source events, extracted signals, provenance links, confidence, expiry, and deletion propagation.
+- [ ] **OBS-002 · P0** Define event schema and retention lifecycle for source events, extracted signals, provenance links, confidence, expiry, and deletion propagation. Explicit camera-session “Save observation notes” may auto-save derived notes to online Observation Memory, labeled as unverified; raw camera media is never retained.
 - [ ] **OBS-003 · P1** Build cross-source correlation that links only user-approved sources, shows evidence/confidence, distinguishes signal from verified fact, and creates reviewable suggestions.
 - [ ] **OBS-004 · P1** Add local file observation for user-selected folders with exclusions, metadata-first indexing, content-on-demand, and local deletion/index rebuild controls.
 - [ ] **OBS-005 · P1** Add opt-in OS context signals where supported: notification metadata, app/focus session, battery/connectivity, and user-started image/voice capture; do not add keystroke, ambient audio, or hidden screen collection.
@@ -171,7 +171,7 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 - [ ] **OBS-015 · P1** Add scoped browser, cloud storage, work, and learning-service connectors; selected tabs/folders/workspaces only, with a separate context for employer or school data.
 - [ ] **OBS-016 · P2** Build the device and account concierge for user-selected diagnostics and official troubleshooting guides; require review before changing settings, installing software, or running commands.
 - [ ] **OBS-017 · P2** Add evidence-based scam/phishing explanations for user-selected messages, links, and official security notices; label uncertainty and prohibit auto-clicking, forwarding, or security-setting changes.
-- [ ] **OBS-018 · P0** Build ephemeral live visual context with separate local/cloud modes, no-save raw and derived media defaults, foreground-only use, visible camera state, timeout, and immediate stop; verify buffers are cleared on stop, app hide, timeout, and permission revocation.
+- [ ] **OBS-018 · P0** Build the foreground camera as a real-time visual sensor. Require explicit camera permission and show active state/timer/stop controls; process sampled frames in volatile memory and never save raw media. In the explicitly enabled **Save observation notes** mode, automatically sync timestamped, confidence/provenance-tagged unverified notes to online Observation Memory. Support local/cloud inference routes, disclose cloud frame transmission, and clear buffers on stop, app hide, timeout, or permission revocation.
 
 ## Phase 9 — Advanced dashboard and refinement
 

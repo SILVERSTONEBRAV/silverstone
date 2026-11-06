@@ -503,9 +503,16 @@ function App() {
   }
 
   async function restoreCloudWorkspace(workspace: LocalAppState) {
-    await saveLocalState(workspace);
-    setAppState(workspace);
-    setToast('Cloud copy restored to this device');
+    const mergedState: LocalAppState = {
+      ...workspace,
+      portfolioProjects: appState.portfolioProjects,
+      socialPosts: appState.socialPosts,
+      emailItems: appState.emailItems,
+      careerDrafts: appState.careerDrafts,
+    };
+    await saveLocalState(mergedState);
+    setAppState(mergedState);
+    setToast('Online records restored; device-only drafts kept');
   }
 
   function completeFocusSession() {
@@ -3019,16 +3026,23 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
     if (!snapshot || !cloudApi) return;
     const replaces = snapshot.workspace !== null;
     const prompt = replaces
-      ? 'Replace the cloud copy with the workspace currently on this device? The other copy will be overwritten.'
-      : 'Create your first cloud copy from the workspace on this device? Only this signed-in account can read it.';
+      ? 'Replace the online workspace records from this device? The upload excludes email, application, portfolio, and social drafts; the other online records will be overwritten.'
+      : 'Create your first online workspace copy? This uploads online workspace records but excludes email, application, portfolio, and social drafts.';
     if (!window.confirm(prompt)) return;
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      await cloudApi.saveCloudWorkspace(workspace, snapshot.revision);
+      const onlineWorkspace: LocalAppState = {
+        ...workspace,
+        portfolioProjects: [],
+        socialPosts: [],
+        emailItems: [],
+        careerDrafts: [],
+      };
+      await cloudApi.saveCloudWorkspace(onlineWorkspace, snapshot.revision);
       setSnapshot(await cloudApi.loadCloudWorkspace());
-      setMessage('This device’s workspace is now saved in your private cloud row.');
+      setMessage('Online workspace records saved. Device-only drafts were excluded.');
     } catch (reason) {
       const detail = reason instanceof Error ? reason.message : 'Could not save to Supabase.';
       setError(detail);
@@ -3042,7 +3056,7 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
 
   async function restoreCloudCopy() {
     if (!snapshot?.workspace) return;
-    if (!window.confirm('Replace the workspace on this device with the Supabase cloud copy? Download a local backup first if you need to preserve both versions.')) return;
+    if (!window.confirm('Restore online workspace records from Supabase? Email, application, portfolio, and social drafts on this device will be kept and will not be replaced.')) return;
     setBusy(true);
     setError('');
     try {
@@ -3074,10 +3088,10 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
 
   return (
     <section className="panel settings-panel cloud-panel">
-      <PanelHeading eyebrow="SUPABASE CLOUD COPY" title="Keep this workspace available online" />
+      <PanelHeading eyebrow="SUPABASE ONLINE WORKSPACE" title="Keep account records available online" />
       {!supabaseConfigured ? <div className="cloud-not-configured"><span className="connection-lock"><Icon name="cloud" size={18} /></span><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to your local environment and Vercel project settings, then redeploy.</p></div> : user ? <>
-        <div className="cloud-user-row"><span><strong>{user.email ?? 'Signed-in account'}</strong><small>Signed in · local edits stay local until you choose to upload</small></span><button className="text-action" onClick={signOut} disabled={busy}>Sign out</button></div>
-        <div className="cloud-info-card"><span className="local-data-icon"><Icon name="shield" size={16} /></span><span><strong>Private, manual sync</strong><small>Only this account can access its row. Upload and restore are explicit actions; local edits do not sync automatically.</small></span></div>
+        <div className="cloud-user-row"><span><strong>{user.email ?? 'Signed-in account'}</strong><small>Signed in · device-only drafts are kept separate</small></span><button className="text-action" onClick={signOut} disabled={busy}>Sign out</button></div>
+        <div className="cloud-info-card"><span className="local-data-icon"><Icon name="shield" size={16} /></span><span><strong>Private, manual online copy</strong><small>Only this account can access its row. Upload and restore are explicit; email, application, portfolio, and social drafts stay on this device. Automatic sync is not implemented yet.</small></span></div>
         {snapshot === undefined ? <p className="cloud-state-copy">Checking your Supabase workspace…</p> : <div className="cloud-snapshot-row"><span><strong>{snapshot.workspace ? 'Cloud copy found' : 'No cloud copy yet'}</strong><small>{snapshot.workspace ? `Revision ${snapshot.revision} · updated ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(snapshot.updatedAt ?? ''))}` : 'Create one from this device when you are ready.'}</small></span><button className="button button-secondary" onClick={refreshCloud} disabled={busy}><Icon name="reset" size={14} /> Refresh</button></div>}
         <div className="cloud-actions"><button className="button button-primary" onClick={uploadLocalWorkspace} disabled={busy || snapshot === undefined}><Icon name="cloud" size={15} /> {snapshot?.workspace ? 'Replace cloud copy' : 'Create cloud copy'}</button>{snapshot?.workspace && <button className="button button-secondary" onClick={restoreCloudCopy} disabled={busy}><Icon name="download" size={14} /> Restore to this device</button>}<button className="button button-secondary" onClick={registerPasskey} disabled={busy}><Icon name="shield" size={14} /> Add a passkey</button></div>
         <p className="cloud-passkey-note">Passkeys use your device’s biometric, PIN, or security key. Supabase stores the public credential; it does not receive your fingerprint or face data.</p>
@@ -3088,7 +3102,7 @@ function CloudWorkspacePanel({ workspace, onRestore }: { workspace: LocalAppStat
       </>}
       {error && <p className="cloud-feedback cloud-error" role="alert">{error}</p>}
       {message && <p className="cloud-feedback cloud-success" role="status">{message}</p>}
-      <small className="cloud-footer-note">Cloud storage is a second copy, not a replacement for local/offline storage. Only upload data you intend to keep in Supabase.</small>
+      <small className="cloud-footer-note">This prototype manually copies online workspace records. Device-only drafts are excluded; automatic sync and conflict resolution are still planned.</small>
     </section>
   );
 }
