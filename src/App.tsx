@@ -43,12 +43,6 @@ const pageCopy: Record<Exclude<PageKey, 'today' | 'settings'>, { title: string; 
   activity: { title: 'A clear record of what happened.', subtitle: 'Review local changes, suggestions, approvals, and workflow outcomes.', eyebrow: 'YOUR ACTIVITY' },
 };
 
-const demoEvents = [
-  { time: '09:12', title: 'Daily plan opened', detail: 'Today workspace · local', tone: 'blue' },
-  { time: '08:54', title: 'Study goal reviewed', detail: 'Rust ownership · 4 topics queued', tone: 'violet' },
-  { time: 'Yesterday', title: 'Portfolio note captured', detail: 'Case study · saved on this device', tone: 'green' },
-];
-
 function todayLabel() {
   return new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
 }
@@ -63,6 +57,36 @@ function greeting() {
 function recommendedStudyBlock(goal: StudyGoal | null): number {
   if (!goal || goal.availabilityDate !== localDateKey() || goal.availableMinutesToday <= 0) return 0;
   return Math.min(25, goal.availableMinutesToday, Math.max(5, Math.ceil(goal.weeklyTargetMinutes / 5)));
+}
+
+function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours && remainder) return `${hours}h ${remainder}m`;
+  if (hours) return `${hours}h`;
+  return `${remainder}m`;
+}
+
+function formatPlannedTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Time not set';
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
+}
+
+function getStudyWeek(sessions: StudySession[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    const key = localDateKey(date);
+    const minutes = sessions
+      .filter((session) => localDateKey(new Date(session.completedAt)) === key)
+      .reduce((total, session) => total + session.plannedMinutes, 0);
+    return { key, date, minutes };
+  });
+  const maximum = Math.max(60, Math.ceil(Math.max(...days.map((day) => day.minutes)) / 60) * 60);
+  return { days, maximum };
 }
 
 function App() {
@@ -404,8 +428,7 @@ function App() {
         <main className="page-content">
           {activePage === 'today' ? (
             <TodayPage
-              tasks={appState.tasks}
-              studyGoal={appState.studyGoal}
+              state={appState}
               openTasks={openTasks}
               completedTasks={completedTasks}
               onToggleTask={toggleTask}
@@ -442,7 +465,7 @@ function App() {
         </main>
         <footer className="app-footer">
           <span>Silverstone is running locally in this browser.</span>
-          <span><Icon name="shield" size={13} /> No external service accounts</span>
+          <span><Icon name="shield" size={13} /> No mail, social, or finance accounts connected</span>
         </footer>
       </div>
       <button className="mobile-fab" onClick={() => setModalMode('task')}><Icon name="plus" size={17} /> New task</button>
@@ -546,8 +569,7 @@ function Sidebar({ activePage, open, onNavigate, onClose }: SidebarProps) {
 }
 
 interface TodayPageProps {
-  tasks: AgentTask[];
-  studyGoal: StudyGoal | null;
+  state: LocalAppState;
   openTasks: AgentTask[];
   completedTasks: number;
   onToggleTask: (id: string) => void;
@@ -559,10 +581,39 @@ interface TodayPageProps {
   onToast: (message: string) => void;
 }
 
-function TodayPage({ tasks, studyGoal, openTasks, completedTasks, onToggleTask, onStartFocus, onStartStudy, onAddTask, onCapture, onNavigate, onToast }: TodayPageProps) {
+function TodayPage({ state, openTasks, completedTasks, onToggleTask, onStartFocus, onStartStudy, onAddTask, onCapture, onNavigate, onToast }: TodayPageProps) {
   const [planExpanded, setPlanExpanded] = useState(false);
-  const todayTasks = tasks.filter((task) => task.dueLabel !== 'Tomorrow');
+  const todayKey = localDateKey();
+  const todayTasks = state.tasks.filter((task) => task.dueLabel !== 'Tomorrow');
   const doneToday = todayTasks.filter((task) => task.done).length;
+  const studyGoal = state.studyGoal;
+  const checkedInToday = studyGoal?.availabilityDate === todayKey;
+  const todayStudyMinutes = state.studySessions
+    .filter((session) => localDateKey(new Date(session.completedAt)) === todayKey)
+    .reduce((total, session) => total + session.plannedMinutes, 0);
+  const { days: studyDays, maximum: studyMaximum } = getStudyWeek(state.studySessions);
+  const weekStudyMinutes = studyDays.reduce((total, day) => total + day.minutes, 0);
+  const activeOpportunities = state.careerOpportunities.filter((item) => item.stage !== 'Closed');
+  const nextOpportunity = [...activeOpportunities].filter((item) => item.deadline).sort((left, right) => left.deadline.localeCompare(right.deadline))[0] ?? null;
+  const nextPlannedPost = [...state.socialPosts]
+    .filter((post) => post.plannedFor && new Date(post.plannedFor).getTime() > Date.now())
+    .sort((left, right) => left.plannedFor.localeCompare(right.plannedFor))[0] ?? null;
+  const applicationGroups = [
+    { label: 'Exploring', stages: ['Saved', 'Researching'], color: 'pipeline-explore' },
+    { label: 'Preparing', stages: ['Drafting', 'Ready to submit'], color: 'pipeline-prepare' },
+    { label: 'In review', stages: ['Submitted', 'Interview'], color: 'pipeline-review' },
+    { label: 'Offer', stages: ['Offer'], color: 'pipeline-offer' },
+  ].map((group) => ({ ...group, count: activeOpportunities.filter((item) => group.stages.includes(item.stage)).length }));
+  const suggestedStudyMinutes = recommendedStudyBlock(studyGoal);
+  const portfolioCount = state.portfolioProjects.length;
+  const dueCards = state.studyCards.filter((card) => new Date(card.nextReviewAt).getTime() <= Date.now());
+  const radarItems = [
+    ...(dueCards.length ? [{ icon: 'clock' as const, label: 'RECALL', title: `${dueCards.length} recall card${dueCards.length === 1 ? '' : 's'} due`, detail: `Spaced review · ${dueCards[0]?.topic ?? 'General'}`, onClick: () => onNavigate('study') }] : []),
+    ...(studyGoal ? [{ icon: 'book' as const, label: 'STUDY', title: studyGoal.topic, detail: checkedInToday ? `${studyGoal.availableMinutesToday} minutes available · ${suggestedStudyMinutes ? `${suggestedStudyMinutes}-minute session suggested` : 'no time planned today'}` : 'Check in with today’s free time to plan a session.', onClick: () => onNavigate('study') }] : []),
+    ...(nextOpportunity ? [{ icon: 'briefcase' as const, label: 'DEADLINE', title: nextOpportunity.title, detail: `${nextOpportunity.kind} · ${formatDeadline(nextOpportunity.deadline)} · ${nextOpportunity.organization}`, onClick: () => onNavigate('career') }] : []),
+    ...(nextPlannedPost ? [{ icon: 'send' as const, label: 'CONTENT PLAN', title: nextPlannedPost.title || nextPlannedPost.channels.join(' + '), detail: `${formatPlannedTime(nextPlannedPost.plannedFor)} · local draft plan; nothing is published`, onClick: () => onNavigate('studio') }] : []),
+    ...(openTasks[0] ? [{ icon: 'check' as const, label: 'TASK', title: openTasks[0].title, detail: `${openTasks[0].category} · ${openTasks[0].dueLabel}`, onClick: () => onNavigate('today') }] : []),
+  ].slice(0, 4);
 
   return (
     <>
@@ -570,7 +621,7 @@ function TodayPage({ tasks, studyGoal, openTasks, completedTasks, onToggleTask, 
         <div>
           <div className="eyebrow-line"><span className="eyebrow-dot" /> {todayLabel()}</div>
           <h1>{greeting()}<span className="heading-period">.</span></h1>
-          <p>Here’s a little more clarity for the day ahead.</p>
+          <p>{openTasks.length ? `You have ${openTasks.length} open task${openTasks.length === 1 ? '' : 's'} in your local workspace.` : 'Your local task list is clear. Use this space to choose what matters next.'}</p>
         </div>
         <div className="heading-actions">
           <button className="button button-secondary" onClick={onCapture}><Icon name="sparkle" size={16} /> Quick capture</button>
@@ -582,22 +633,22 @@ function TodayPage({ tasks, studyGoal, openTasks, completedTasks, onToggleTask, 
         <div className="hero-copy">
           <div className="hero-eyebrow"><span className="hero-live-dot" /> YOUR DAY, IN FOCUS</div>
           <h2>Small steps.<br /><em>Real momentum.</em></h2>
-          <p>You have room for focused work and a little breathing space. Let’s make it count.</p>
+          <p>{openTasks.length ? 'Pick one useful next step, then leave room for the rest of your day.' : 'Your task list is clear. Plan a small study session or capture what is on your mind.'}</p>
           <div className="hero-actions">
             <button className="button button-light" onClick={onStartFocus}><Icon name="play" size={14} /> Start a focus session</button>
             <button className="hero-link" onClick={() => setPlanExpanded((value) => !value)}>
               {planExpanded ? 'Hide day plan' : 'Review my day'} <Icon name="arrow" size={15} />
             </button>
           </div>
-          {planExpanded && <div className="plan-note"><Icon name="sparkle" size={14} /> You have 2 open blocks. A 25-minute study session fits before your next commitment.</div>}
+          {planExpanded && <div className="plan-note"><Icon name="sparkle" size={14} /> {studyGoal ? (checkedInToday ? `${studyGoal.availableMinutesToday} minutes are available for ${studyGoal.topic}. Silverstone has no calendar connection, so this plan does not account for appointments.` : `Your ${studyGoal.topic} goal is saved. Check in with today’s free time to get a study suggestion.`) : 'Set a study goal and tell Silverstone how much time you have today. Calendar events are not connected.'}</div>}
         </div>
-        <div className="hero-visual" aria-label="Daily goals are 60 percent complete">
+        <div className="hero-visual" aria-label={`${doneToday} of ${todayTasks.length} tracked tasks completed today`}>
           <div className="orbit-ring orbit-ring-one" />
           <div className="orbit-ring orbit-ring-two" />
           <div className="orbit-core">
-            <span>DAILY INTENTION</span>
-            <strong>3<span>/5</span></strong>
-            <small>steps moving</small>
+            <span>TASKS TODAY</span>
+            <strong>{doneToday}<span>/{todayTasks.length}</span></strong>
+            <small>{openTasks.length} still open</small>
           </div>
           <span className="orbit-spark orbit-spark-one" />
           <span className="orbit-spark orbit-spark-two" />
@@ -607,10 +658,10 @@ function TodayPage({ tasks, studyGoal, openTasks, completedTasks, onToggleTask, 
       </section>
 
       <section className="metric-grid" aria-label="Daily overview">
-        <MetricCard icon="clock" label="FOCUS TIME" value="2h 15m" note="of your 3h goal" noteTone="blue" chart={[34, 60, 42, 75, 49, 82, 62]} />
-        <MetricCard icon="check" label="TASKS MOVING" value={`${doneToday} / ${Math.max(todayTasks.length, 3)}`} note="One clear next step" noteTone="green" progress={todayTasks.length ? (doneToday / todayTasks.length) * 100 : 0} />
-        <MetricCard icon="calendar" label="UP NEXT" value="10:30" note="Study · 25 minutes" noteTone="violet" />
-        <MetricCard icon="sparkles" label="OPEN SPACE" value="1h 40m" note="Across 2 open blocks" noteTone="amber" />
+        <MetricCard icon="clock" label="STUDY TIME" value={formatDuration(todayStudyMinutes)} note={`${formatDuration(weekStudyMinutes)} this week`} noteTone="blue" chart={weekStudyMinutes ? studyDays.map((day) => Math.max(4, (day.minutes / studyMaximum) * 100)) : undefined} />
+        <MetricCard icon="check" label="TASKS MOVING" value={`${doneToday} / ${todayTasks.length}`} note={openTasks.length ? `${openTasks.length} open` : 'No open tasks'} noteTone="green" progress={todayTasks.length ? (doneToday / todayTasks.length) * 100 : 0} />
+        <MetricCard icon="book" label="STUDY CHECK-IN" value={studyGoal ? (checkedInToday ? `${studyGoal.availableMinutesToday}m` : 'Check in') : 'Set a goal'} note={studyGoal?.topic ?? 'No active study goal'} noteTone="violet" />
+        <MetricCard icon="calendar" label="NEXT DEADLINE" value={nextOpportunity ? formatDeadline(nextOpportunity.deadline) : 'None tracked'} note={nextOpportunity?.title ?? 'Add a job or scholarship'} noteTone="amber" />
       </section>
 
       <div className="dashboard-grid dashboard-grid-main">
@@ -618,44 +669,36 @@ function TodayPage({ tasks, studyGoal, openTasks, completedTasks, onToggleTask, 
           <PanelHeading eyebrow="A GOOD PLACE TO START" title="Your next moves" action="View all" onAction={() => onNavigate('study')} />
           <div className="next-move-list">
             <NextMove icon="book" tone="blue" tag="STUDY" title={studyGoal ? (recommendedStudyBlock(studyGoal) ? `Continue ${studyGoal.topic}` : `Check in for ${studyGoal.topic}`) : 'Set your first study goal'} subtitle={studyGoal ? (recommendedStudyBlock(studyGoal) ? 'Your local study plan · one gentle block' : 'Update your free time to choose a short block') : 'Choose a topic and tell Silverstone your free time'} meta={studyGoal ? (recommendedStudyBlock(studyGoal) ? `${recommendedStudyBlock(studyGoal)} min` : 'Check in') : 'Plan'} onClick={studyGoal ? () => { const block = recommendedStudyBlock(studyGoal); if (block) onStartStudy(studyGoal.topic, block, studyGoal.id); else onNavigate('study'); } : () => onNavigate('study')} />
-            <NextMove icon="briefcase" tone="violet" tag="CAREER" title="Your fellowship essay is ready for one more pass" subtitle="Atlas Future Leaders · Due Nov 14" meta="12 min" onClick={() => onNavigate('career')} />
-            <NextMove icon="layers" tone="green" tag="PORTFOLIO" title="Add the outcome to your project story" subtitle="Case study · 2 notes to review" meta="15 min" onClick={() => onNavigate('portfolio')} />
+            <NextMove icon="briefcase" tone="violet" tag="CAREER" title={nextOpportunity?.title ?? 'Track a job or scholarship'} subtitle={nextOpportunity ? `${nextOpportunity.kind} · ${nextOpportunity.organization} · due ${formatDeadline(nextOpportunity.deadline)}` : 'Save an opportunity and its deadline'} meta={nextOpportunity ? nextOpportunity.stage : 'Add'} onClick={() => onNavigate('career')} />
+            <NextMove icon="layers" tone="green" tag="PORTFOLIO" title={portfolioCount ? 'Continue a portfolio project' : 'Start your portfolio story'} subtitle={portfolioCount ? `${portfolioCount} local project draft${portfolioCount === 1 ? '' : 's'} saved` : 'Create a project draft from your work'} meta={portfolioCount ? 'Open drafts' : 'Create'} onClick={() => onNavigate('portfolio')} />
           </div>
-          <button className="panel-foot-link" onClick={() => onToast('Suggestions are based on this local preview plan')}>
+          <button className="panel-foot-link" onClick={() => onToast('Today’s suggestions use saved local tasks, study goals, opportunities, and portfolio drafts.')}>
             <span><Icon name="sparkle" size={14} /> Why these suggestions?</span><Icon name="arrow" size={14} />
           </button>
         </section>
 
         <section className="panel agenda-panel">
-          <PanelHeading eyebrow="A FLEXIBLE OUTLINE" title="Today’s rhythm" action="Open calendar" onAction={() => onToast('Calendar connection is not set up yet')} />
-          <div className="agenda-timeline">
-            <AgendaRow time="09:00" title="Deep work" detail="Portfolio case study" tone="blue" state="done" />
-            <AgendaRow time="10:30" title="Study session" detail="Rust · ownership" tone="violet" state="next" />
-            <AgendaRow time="12:00" title="Open space" detail="Lunch or a short walk" tone="soft" state="open" />
-            <AgendaRow time="14:00" title="Application review" detail="Fellowship essay" tone="amber" state="upcoming" />
+          <PanelHeading eyebrow="SAVED LOCAL CONTEXT" title="Your current radar" action="Study space" onAction={() => onNavigate('study')} />
+          <div className="radar-list">
+            {radarItems.map((item) => <RadarRow key={`${item.label}-${item.title}`} {...item} />)}
+            {!radarItems.length && <div className="empty-state compact"><span className="empty-icon"><Icon name="sparkle" /></span><strong>Nothing queued yet.</strong><span>Add a task, set a study goal, or save a career deadline to see it here.</span></div>}
           </div>
-          <div className="agenda-note"><Icon name="sparkle" size={14} /> Your open time is yours to adjust.</div>
+          <div className="agenda-note"><Icon name="shield" size={14} /> Calendar and external publishing are not connected.</div>
         </section>
       </div>
 
       <div className="dashboard-grid dashboard-grid-lower">
         <section className="panel focus-panel">
-          <PanelHeading eyebrow="A STEADY RHYTHM" title="Your focus this week" action="Study space" onAction={() => onNavigate('study')} />
+          <PanelHeading eyebrow="A STEADY RHYTHM" title="Study time this week" action="Study space" onAction={() => onNavigate('study')} />
           <div className="focus-chart-wrap">
-            <div className="chart-y-labels"><span>3h</span><span>2h</span><span>1h</span><span>0</span></div>
-            <div className="focus-chart" role="img" aria-label="Focus time for the last seven days: 1.4, 2.2, 1.8, 2.7, 2.1, 3.0 and 2.4 hours">
+            <div className="chart-y-labels"><span>{formatDuration(studyMaximum)}</span><span>{formatDuration(Math.round(studyMaximum * 2 / 3))}</span><span>{formatDuration(Math.round(studyMaximum / 3))}</span><span>0m</span></div>
+            <div className="focus-chart" role="img" aria-label={`Recorded study time over the last seven days, ${weekStudyMinutes} minutes total`}>
               <div className="chart-grid-lines"><span /><span /><span /><span /></div>
-              <svg viewBox="0 0 520 140" preserveAspectRatio="none" className="focus-svg" aria-hidden="true">
-                <defs><linearGradient id="focus-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6e78f8" stopOpacity=".23" /><stop offset="100%" stopColor="#6e78f8" stopOpacity="0" /></linearGradient></defs>
-                <path d="M0 92 C34 88 48 82 78 81 S130 52 160 57 S218 76 240 68 S296 35 320 42 S370 64 400 54 S452 22 480 31 S505 41 520 35 L520 140 L0 140Z" fill="url(#focus-fill)" />
-                <path d="M0 92 C34 88 48 82 78 81 S130 52 160 57 S218 76 240 68 S296 35 320 42 S370 64 400 54 S452 22 480 31 S505 41 520 35" fill="none" stroke="#7279ef" strokeWidth="3" strokeLinecap="round" />
-                <circle cx="320" cy="42" r="4.5" fill="#fff" stroke="#7279ef" strokeWidth="3" />
-                <circle cx="480" cy="31" r="4.5" fill="#fff" stroke="#7279ef" strokeWidth="3" />
-              </svg>
-              <div className="chart-x-labels"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
+              <div className="study-bars" aria-hidden="true">{studyDays.map((day) => <div className="study-bar-column" key={day.key}><i title={`${day.minutes} study minutes`} style={{ height: `${day.minutes ? Math.max(3, (day.minutes / studyMaximum) * 100) : 0}%` }} /></div>)}</div>
+              <div className="chart-x-labels">{studyDays.map((day) => <span key={day.key}>{new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day.date).slice(0, 2).toUpperCase()}</span>)}</div>
             </div>
           </div>
-          <div className="focus-summary"><span className="focus-summary-dot" /> A little more consistent than last week <strong>+18%</strong></div>
+          <div className="focus-summary"><span className="focus-summary-dot" /> {weekStudyMinutes ? 'Recorded study time this week' : 'Complete a study session to start your chart'} <strong>{formatDuration(weekStudyMinutes)}</strong></div>
         </section>
 
         <section className="panel tasks-panel">
@@ -672,22 +715,22 @@ function TodayPage({ tasks, studyGoal, openTasks, completedTasks, onToggleTask, 
       <div className="dashboard-grid dashboard-grid-bottom">
         <section className="panel application-panel">
           <PanelHeading eyebrow="CAREER MOMENTUM" title="Opportunities in motion" action="Career space" onAction={() => onNavigate('career')} />
-          <div className="opportunity-summary"><strong>3</strong><span>active applications</span><div className="pipeline-avatars"><i>A</i><i>N</i><i>O</i></div></div>
-          <div className="pipeline-track"><span className="pipeline-done" /><span className="pipeline-progress" /><span /><span /></div>
-          <div className="pipeline-labels"><span>Exploring</span><span>Preparing</span><span>Submitted</span><span>In review</span></div>
-          <div className="next-deadline"><span className="deadline-icon"><Icon name="calendar" size={15} /></span><span><small>NEXT DEADLINE</small><strong>Atlas Future Leaders · Nov 14</strong></span><Icon name="arrow" size={15} /></div>
+          <div className="opportunity-summary"><strong>{activeOpportunities.length}</strong><span>active job and scholarship opportunities</span></div>
+          <div className="pipeline-track" role="img" aria-label={applicationGroups.map((group) => `${group.label}: ${group.count}`).join(', ')}>{applicationGroups.map((group) => <span key={group.label} className={group.color} style={{ width: activeOpportunities.length ? `${(group.count / activeOpportunities.length) * 100}%` : '0%' }} title={`${group.label}: ${group.count}`} />)}</div>
+          <div className="pipeline-labels">{applicationGroups.map((group) => <span key={group.label}>{group.label} {group.count}</span>)}</div>
+          <div className="next-deadline"><span className="deadline-icon"><Icon name="calendar" size={15} /></span><span><small>{nextOpportunity ? 'NEXT SAVED DEADLINE' : 'NO DEADLINE TRACKED'}</small><strong>{nextOpportunity ? `${nextOpportunity.title} · ${formatDeadline(nextOpportunity.deadline)}` : 'Add a job or scholarship to track it here.'}</strong></span><Icon name="arrow" size={15} /></div>
         </section>
 
         <section className="observation-card">
           <div className="observation-top"><span className="observation-icon"><Icon name="scan" size={17} /></span><span className="status-pill status-off"><span /> OFF</span></div>
           <p className="eyebrow">YOUR CONTEXT, YOUR CHOICE</p>
           <h3>Observation is<br />paused.</h3>
-          <p className="observation-description">No accounts or device sensors are connected in this local preview.</p>
+          <p className="observation-description">No observation sources or device sensors are connected. Your workspace cloud copy is separate from observation.</p>
           <button className="observation-link" onClick={() => onNavigate('observation')}>Explore permissions <Icon name="arrow" size={15} /></button>
           <div className="observation-grid" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
         </section>
       </div>
-      <div className="dashboard-endnote"><Icon name="shield" size={14} /> Your workspace is stored on this device. Connected services are not enabled.</div>
+      <div className="dashboard-endnote"><Icon name="shield" size={14} /> Charts use your saved local records. Calendar, mail, social, and brokerage connections are not enabled.</div>
     </>
   );
 }
@@ -724,15 +767,17 @@ function NextMove({ icon, tone, tag, title, subtitle, meta, onClick }: { icon: I
   );
 }
 
-function AgendaRow({ time, title, detail, tone, state }: { time: string; title: string; detail: string; tone: string; state: 'done' | 'next' | 'open' | 'upcoming' }) {
-  return (
-    <div className={`agenda-row agenda-${state}`}>
-      <span className="agenda-time">{time}</span>
-      <span className={`agenda-marker marker-${tone}`}>{state === 'done' ? <Icon name="check" size={11} /> : null}</span>
-      <span className="agenda-event"><strong>{title}</strong><small>{detail}</small></span>
-      {state === 'next' && <span className="agenda-next-label">NEXT</span>}
-    </div>
+function RadarRow({ icon, label, title, detail, onClick }: { icon: IconName; label: string; title: string; detail: string; onClick?: () => void }) {
+  const content = (
+    <>
+      <span className="radar-icon"><Icon name={icon} size={15} /></span>
+      <span className="radar-copy"><small>{label}</small><strong>{title}</strong><span>{detail}</span></span>
+    </>
   );
+  if (onClick) {
+    return <button className="radar-row radar-row-button" type="button" onClick={onClick}>{content}</button>;
+  }
+  return <div className="radar-row">{content}</div>;
 }
 
 function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) {
@@ -1054,19 +1099,19 @@ function PermissionRow({ icon, title, detail, mode }: { icon: IconName; title: s
 }
 
 function ActivityModule({ state }: { state: LocalAppState }) {
-  const localEvents = state.captures.slice(0, 3).map((capture) => ({
+  const localEvents = [...state.captures].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 8).map((capture) => ({
     time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(capture.createdAt)),
-    title: 'Note captured',
-    detail: `${capture.text} · local`,
+    title: `${capture.kind} captured`,
+    detail: `${capture.text} · ${capture.modality} · local`,
     tone: 'green',
   }));
   return (
     <div className="module-layout activity-layout">
       <section className="module-stats"><MiniStat value={`${state.tasks.length}`} label="Tasks in this browser" icon="check" /><MiniStat value={`${state.captures.length}`} label="Local captures" icon="file" /><MiniStat value="0" label="Connected services" icon="shield" /></section>
-      <section className="panel module-panel"><PanelHeading eyebrow="LOCAL PREVIEW HISTORY" title="Recent activity" action="All activity" />
-        <div className="activity-timeline">{[...localEvents, ...demoEvents].map((event, index) => <div className="activity-row" key={`${event.title}-${index}`}><span className="activity-time">{event.time}</span><span className={`activity-marker activity-${event.tone}`}><i /></span><span className="activity-copy"><strong>{event.title}</strong><small>{event.detail}</small></span></div>)}</div>
+      <section className="panel module-panel"><PanelHeading eyebrow="LOCAL CAPTURE HISTORY" title="Recent captures" />
+        <div className="activity-timeline">{localEvents.length ? localEvents.map((event, index) => <div className="activity-row" key={`${event.title}-${event.time}-${index}`}><span className="activity-time">{event.time}</span><span className={`activity-marker activity-${event.tone}`}><i /></span><span className="activity-copy"><strong>{event.title}</strong><small>{event.detail}</small></span></div>) : <div className="empty-state compact"><span className="empty-icon"><Icon name="file" /></span><strong>No captures yet.</strong><span>Your notes and ideas will appear here after you save them.</span></div>}</div>
       </section>
-      <div className="module-note"><Icon name="shield" size={16} /><span>External actions are not available in the local preview, so this timeline contains only local activity.</span></div>
+      <div className="module-note"><Icon name="shield" size={16} /><span>This view lists local captures only. Task edits and external action history are not recorded here yet.</span></div>
     </div>
   );
 }

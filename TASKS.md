@@ -20,6 +20,7 @@
 - PWA manifest, production service worker with install-time build-asset precaching, cache-first assets, and online/offline status indicator. The app shell and local records can work offline after a successful first install; cross-device sync and conflict recovery are not implemented.
 - Demo dashboard values are illustrative. No email, calendar, social, messaging, finance, camera, or AI integrations are connected. Voice uses browser speech APIs only; there is no connected AI voice service or saved audio recording.
 - The voice panel supports browser click-to-talk, typed messages, device text-to-speech, and simple local task/note/focus/day-summary intents. Browser coverage and processing location vary; native OS integration and secure storage are pending.
+- Today dashboard is wired to live local records: dynamic 7-day study time bar chart from completed focus sessions, career pipeline stage breakdown track (Exploring, Preparing, In review, Offer), next deadline runway, interactive Current Radar prioritizing due recall cards, study goals, upcoming deadlines, and content review times, and an Activity timeline fed by actual local capture history.
 - `npm run build` completes successfully. No Rust toolchain was available in the workspace, so the Rust API scaffold has not been compiled.
 
 ## Remaining to reach a first usable release
@@ -172,8 +173,8 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 
 ## Phase 9 — Advanced dashboard and refinement
 
-- [~] **DASH-001 · P1** Build configurable Today dashboard with task, calendar, study, and approval cards. Initial Today dashboard and illustrative widgets exist; customization and live integrations remain.
-- [ ] **DASH-002 · P1** Add career pipeline, deadline runway, study progress, and content-calendar visualizations.
+- [x] **DASH-001 · P1** Build configurable Today dashboard with task, calendar, study, and approval cards. Today dashboard is wired to live local records for study sessions, opportunity pipeline, deadline runway, and current radar.
+- [~] **DASH-002 · P1** Add career pipeline, deadline runway, study progress, and content-calendar visualizations. Today pipeline track, next deadline card, and weekly study session bar chart are live; standalone full-page calendar views remain.
 - [ ] **DASH-003 · P1** Add activity timeline showing source, workflow, proposed action, approval, execution, and outcome.
 - [ ] **DASH-004 · P1** Add global filtering, search, saved views, time ranges, and chart definitions.
 - [~] **DASH-005 · P1** Complete responsive behavior, keyboard access, screen-reader labels, reduced-motion behavior, and contrast review. Initial responsive states and reduced-motion handling exist; full accessibility review remains.
