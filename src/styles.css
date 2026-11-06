@@ -788,6 +788,45 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
 .career-empty strong { color: var(--ink); font-family: Manrope, sans-serif; font-size: 12px; }
 .career-empty > span:not(.empty-icon) { max-width: 390px; margin-top: 6px; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .career-empty .button { margin-top: 14px; }
+.career-discovery-panel { min-width: 0; }
+.career-discovery-form { display: flex; flex-direction: column; gap: 10px; }
+.career-discovery-form input, .career-discovery-form select { width: 100%; min-height: 38px; padding: 9px 11px; color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 8px; font-size: 10px; }
+.career-discovery-form input:focus-visible, .career-discovery-form select:focus-visible { outline: 2px solid color-mix(in srgb, #7278d9 65%, transparent); outline-offset: 1px; }
+.career-discovery-query { display: flex; align-items: stretch; gap: 8px; }
+.career-discovery-query input { flex: 1; min-width: 0; }
+.career-discovery-query .button { flex: 0 0 auto; white-space: nowrap; }
+.career-discovery-evidence, .career-discovery-sources { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+.career-discovery-evidence summary, .career-discovery-sources summary { padding: 10px 12px; color: var(--ink); font-size: 9px; font-weight: 600; cursor: pointer; }
+.career-discovery-evidence summary span { margin-left: 6px; color: var(--muted); font-size: 8px; font-weight: 400; }
+.career-discovery-evidence > p { margin: 0; padding: 0 12px 11px; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.career-discovery-evidence-list { display: flex; flex-direction: column; max-height: 190px; overflow: auto; padding: 0 12px 8px; }
+.career-discovery-evidence-list label { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.career-discovery-evidence-list input { flex: 0 0 auto; width: auto; min-height: auto; margin: 2px 0 0; accent-color: #6168d3; }
+.career-discovery-evidence-list label > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.career-discovery-evidence-list strong { color: var(--ink); font-size: 8px; }
+.career-discovery-evidence-list small { color: var(--muted); font-size: 8px; line-height: 1.4; }
+.career-discovery-privacy { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.career-discovery-privacy svg { flex: 0 0 auto; margin-top: 1px; }
+.career-discovery-results { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.career-discovery-summary { margin: 0; color: var(--muted-strong); font-size: 9px; line-height: 1.55; }
+.career-discovery-result-list { display: flex; flex-direction: column; gap: 9px; }
+.career-discovery-result { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 9px; }
+.career-discovery-result-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.career-discovery-result-title > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.career-discovery-result-title strong { color: var(--ink); font-size: 10px; line-height: 1.45; }
+.career-discovery-result-title small { color: var(--muted); font-size: 8px; line-height: 1.45; }
+.career-discovery-result-title a, .career-discovery-sources a { display: inline-flex; align-items: center; gap: 4px; color: #5961c7; font-size: 8px; text-decoration: none; }
+.career-discovery-result-title a { flex: 0 0 auto; }
+.career-discovery-result-title a:hover, .career-discovery-sources a:hover { text-decoration: underline; }
+.career-discovery-result > p { margin: 0; color: var(--muted-strong); font-size: 8px; line-height: 1.5; }
+.career-discovery-result .career-discovery-fit { color: var(--ink); }
+.career-discovery-requirements { padding-top: 7px; border-top: 1px solid var(--line); }
+.career-discovery-requirements strong { color: var(--ink); font-size: 8px; }
+.career-discovery-requirements ul, .career-discovery-sources ul { display: flex; flex-direction: column; gap: 5px; margin: 6px 0 0; padding-left: 16px; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.career-discovery-sources { padding-bottom: 10px; }
+.career-discovery-sources ul { margin: 0; padding-right: 12px; }
+.career-discovery-sources a { overflow-wrap: anywhere; }
+.career-discovery-result .button { align-self: flex-start; }
 .opportunity-source { display: inline-grid; place-items: center; }
 .career-dialog { width: min(100%, 660px); max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; }
 .career-dialog input, .career-dialog select { display: block; width: 100%; min-height: 38px; padding: 9px 11px; color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 8px; font-size: 10px; }
@@ -895,6 +934,9 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
   .portfolio-editor-actions .button { flex: 1; }
   .career-dialog { max-height: 92dvh; padding: 18px; }
   .career-form-grid { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .career-discovery-query { align-items: stretch; flex-direction: column; }
+  .career-discovery-query .button { width: 100%; justify-content: center; }
+  .career-discovery-result-title { align-items: flex-start; flex-direction: column; }
   .career-editor-actions { width: 100%; }
   .career-editor-actions .button { flex: 1; }
   .cloud-snapshot-row, .cloud-user-row { align-items: flex-start; }

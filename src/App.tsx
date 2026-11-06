@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
-import { askSilverstone, getApiReadiness, type ApiReadinessResponse } from './api';
+import { askSilverstone, discoverCareerOpportunities, getApiReadiness, type ApiReadinessResponse, type CareerDiscoveryResult } from './api';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
 import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerDraft, CareerDraftKind, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
@@ -1212,6 +1212,14 @@ function CareerModule({
   onDeleteCareerDraft: (id: string) => void;
 }) {
   const [tab, setTab] = useState<'pipeline' | 'interviews' | 'evidence' | 'drafts'>('pipeline');
+  const [discoveryKind, setDiscoveryKind] = useState<'job' | 'scholarship'>('job');
+  const [discoveryQuery, setDiscoveryQuery] = useState('');
+  const [discoveryLocation, setDiscoveryLocation] = useState('');
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+  const [discoveryBusy, setDiscoveryBusy] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState('');
+  const [discoveryResults, setDiscoveryResults] = useState<CareerDiscoveryResult | null>(null);
+  const [discoveryResultsKind, setDiscoveryResultsKind] = useState<'job' | 'scholarship'>('job');
   const activeOpportunities = opportunities.filter((item) => item.stage !== 'Closed');
   const thisMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const dueThisMonth = activeOpportunities.filter((item) => item.deadline.startsWith(thisMonth)).length;
@@ -1223,6 +1231,61 @@ function CareerModule({
   const averageReadiness = assessedPreps.length > 0
     ? Math.round(assessedPreps.reduce((acc, p) => acc + p.readinessScore, 0) / assessedPreps.length)
     : 0;
+
+  async function searchCareerOpportunities(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!discoveryQuery.trim() || discoveryBusy) return;
+    const selectedEvidence = careerEvidence.filter((item) => item.verifiedAt && selectedEvidenceIds.includes(item.id));
+    const evidence = selectedEvidence.map((item) => [
+      `${item.kind}: ${item.title}`,
+      item.organization && `Organization: ${item.organization}`,
+      item.timeframe && `Timeframe: ${item.timeframe}`,
+      item.details && `Details: ${item.details}`,
+      item.skills.length && `Skills: ${item.skills.join(', ')}`,
+      item.sourceUrl && `Source: ${item.sourceUrl}`,
+    ].filter(Boolean).join('\n')).join('\n\n').slice(0, 5_000);
+    const requestedKind = discoveryKind;
+    setDiscoveryBusy(true);
+    setDiscoveryError('');
+    setDiscoveryResults(null);
+    try {
+      setDiscoveryResults(await discoverCareerOpportunities({
+        kind: requestedKind,
+        query: discoveryQuery.trim(),
+        location: discoveryLocation.trim(),
+        evidence,
+      }));
+      setDiscoveryResultsKind(requestedKind);
+    } catch (reason) {
+      setDiscoveryError(reason instanceof Error ? reason.message : 'Silverstone could not search for opportunities.');
+    } finally {
+      setDiscoveryBusy(false);
+    }
+  }
+
+  function reviewDiscoveredOpportunity(item: CareerDiscoveryResult['opportunities'][number]) {
+    const now = new Date().toISOString();
+    const requirements = item.requirements_to_verify.slice(0, 8);
+    const deadline = /^\d{4}-\d{2}-\d{2}$/.test(item.deadline) ? item.deadline : '';
+    const kind = discoveryResultsKind === 'job' ? 'Job' : 'Scholarship';
+    onEdit({
+      id: `discovered-${createId('opportunity')}`,
+      kind,
+      title: item.title,
+      organization: item.organization,
+      sourceUrl: item.source_url,
+      deadline,
+      stage: 'Saved',
+      fitNotes: [item.fit_notes, item.overview && `Overview: ${item.overview}`, requirements.length && `Requirements to verify:\n${requirements.map((requirement) => `• ${requirement}`).join('\n')}`, 'Search results are a starting point. Verify details and eligibility at the official source before applying.'].filter(Boolean).join('\n\n'),
+      eligibilityItems: kind === 'Scholarship' ? requirements.map((requirement) => ({ id: createId('eligibility'), requirement, status: 'To check' as const, notes: '', sourceUrl: item.source_url })) : [],
+      documents: [],
+      nextAction: 'Verify current details on the official source',
+      nextActionDue: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+    setTab('pipeline');
+  }
 
   return (
     <div className="module-layout">
@@ -1259,6 +1322,31 @@ function CareerModule({
 
       {tab === 'pipeline' ? (
         <>
+          <section className="panel module-panel career-discovery-panel">
+            <PanelHeading eyebrow="LIVE OPPORTUNITY RESEARCH" title="Search jobs and scholarships" />
+            <form className="career-discovery-form" onSubmit={(event) => void searchCareerOpportunities(event)}>
+              <div className="career-form-grid">
+                <div><label className="field-label" htmlFor="career-discovery-kind">Search for</label><select id="career-discovery-kind" value={discoveryKind} onChange={(event) => setDiscoveryKind(event.target.value as 'job' | 'scholarship')}><option value="job">Jobs</option><option value="scholarship">Scholarships and funding</option></select></div>
+                <div><label className="field-label" htmlFor="career-discovery-location">Location or destination</label><input id="career-discovery-location" maxLength={160} value={discoveryLocation} onChange={(event) => setDiscoveryLocation(event.target.value)} placeholder="e.g. Remote, Kenya, UK universities" /></div>
+              </div>
+              <label className="field-label" htmlFor="career-discovery-query">What should Silverstone look for?</label>
+              <div className="career-discovery-query"><input id="career-discovery-query" required maxLength={300} value={discoveryQuery} onChange={(event) => setDiscoveryQuery(event.target.value)} placeholder="e.g. Entry-level data analyst roles using Python and public health" /><button className="button button-primary" type="submit" disabled={discoveryBusy || !discoveryQuery.trim()}><Icon name={discoveryBusy ? 'sparkles' : 'search'} size={15} />{discoveryBusy ? 'Searching the web…' : 'Search the web'}</button></div>
+              <details className="career-discovery-evidence"><summary>Compare with verified career evidence <span>optional · {selectedEvidenceIds.filter((id) => careerEvidence.some((item) => item.id === id && item.verifiedAt)).length} selected</span></summary>
+                {careerEvidence.some((item) => item.verifiedAt) ? <div className="career-discovery-evidence-list">{careerEvidence.filter((item) => item.verifiedAt).map((item) => <label key={item.id}><input type="checkbox" checked={selectedEvidenceIds.includes(item.id)} onChange={(event) => setSelectedEvidenceIds((current) => event.target.checked ? [...new Set([...current, item.id])] : current.filter((id) => id !== item.id))} /><span><strong>{item.title}</strong><small>{[item.kind, item.organization, item.skills.join(', ')].filter(Boolean).join(' · ')}</small></span></label>)}</div> : <p>Add and verify career evidence in the Evidence Library to compare opportunities against your experience.</p>}
+              </details>
+              <p className="career-discovery-privacy"><Icon name="shield" size={13} /> Search runs through OpenAI web search. Only your query and evidence you select are sent to OpenAI for this request. Silverstone does not save the search response unless you review an opportunity into your pipeline. Confirm every requirement and deadline at its source.</p>
+            </form>
+            {discoveryError && <p className="cloud-feedback cloud-error" role="alert">{discoveryError}</p>}
+            {discoveryResults && <div className="career-discovery-results"><p className="career-discovery-summary">{discoveryResults.summary || 'Search complete. Review current details at each source.'}</p>
+              {discoveryResults.opportunities.length ? <div className="career-discovery-result-list">{discoveryResults.opportunities.map((item, index) => <article className="career-discovery-result" key={`${item.source_url}-${index}`}>
+                <div className="career-discovery-result-title"><div><strong>{item.title}</strong><small>{[item.organization, item.location, item.deadline && item.deadline !== 'Unknown' ? `Deadline ${item.deadline}` : 'Deadline not confirmed'].filter(Boolean).join(' · ')}</small></div><a href={item.source_url} target="_blank" rel="noreferrer" aria-label={`Open official source for ${item.title}`}><Icon name="external" size={13} /> Source</a></div>
+                <p>{item.overview}</p><p className="career-discovery-fit">Possible fit: {item.fit_notes}</p>
+                {item.requirements_to_verify.length > 0 && <div className="career-discovery-requirements"><strong>Check at the source</strong><ul>{item.requirements_to_verify.slice(0, 6).map((requirement, requirementIndex) => <li key={`${requirement}-${requirementIndex}`}>{requirement}</li>)}</ul></div>}
+                <button className="button button-secondary" onClick={() => reviewDiscoveredOpportunity(item)}><Icon name="plus" size={13} /> Review and save to pipeline</button>
+              </article>)}</div> : <div className="career-empty"><strong>No current matches found.</strong><span>{discoveryResults.summary || 'Try a broader title, location, or study destination.'}</span></div>}
+              {discoveryResults.sources.length > 0 && <details className="career-discovery-sources"><summary>Search sources ({discoveryResults.sources.length})</summary><ul>{discoveryResults.sources.slice(0, 12).map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}<Icon name="external" size={11} /></a></li>)}</ul></details>}
+            </div>}
+          </section>
           <section className="module-stats">
             <MiniStat value={String(activeOpportunities.length)} label="In the pipeline" icon="briefcase" />
             <MiniStat value={String(dueThisMonth)} label="Deadlines this month" icon="calendar" />
@@ -1758,7 +1846,7 @@ function CareerOpportunityDialog({ current, onSave, onClose }: { current: Career
     <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="dialog-card career-dialog" role="dialog" aria-modal="true" aria-labelledby="career-dialog-title">
         <div className="dialog-top"><span className="dialog-icon"><Icon name="briefcase" size={18} /></span><button className="icon-button" aria-label="Close opportunity editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
-        <span className="panel-eyebrow">LOCAL CAREER TRACKER</span><h2 id="career-dialog-title">{current ? 'Update your next step.' : 'Save an opportunity.'}</h2><p>Keep the source, deadline, next action, and application stage together. Nothing is submitted from here.</p>
+        <span className="panel-eyebrow">LOCAL CAREER TRACKER</span><h2 id="career-dialog-title">{current?.id.startsWith('discovered-') ? 'Review this opportunity.' : current ? 'Update your next step.' : 'Save an opportunity.'}</h2><p>Keep the source, deadline, next action, and application stage together. Nothing is submitted from here.</p>
         <form onSubmit={submit}>
           <div className="career-form-grid">
             <div><label className="field-label" htmlFor="opportunity-kind">Opportunity type</label><select id="opportunity-kind" value={kind} onChange={(event) => setKind(event.target.value as CareerOpportunity['kind'])}><option>Job</option><option>Scholarship</option></select></div>
