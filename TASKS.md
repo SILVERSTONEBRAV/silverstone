@@ -11,6 +11,7 @@
 - React + TypeScript + Vite browser shell with responsive workspace navigation and dashboard pages.
 - Minimal Axum loopback health endpoint and TypeScript health response/client contract are scaffolded; Rust compilation remains pending because Cargo is unavailable.
 - IndexedDB-backed local tasks, notes, a weekly study goal, available-time preference, and completed focus-session log; migration from older Silverstone/Orbit localStorage keys; metadata, search, task completion, and theme preference. localStorage remains a fallback; browser data is not encrypted.
+- User-triggered JSON workspace backup and schema-validated restore for tasks, notes, and study data; the export is intentionally unencrypted and restore replaces the current local workspace after confirmation.
 - PWA manifest, production service worker with install-time build-asset precaching, cache-first assets, and online/offline status indicator. The app shell and local records can work offline after a successful first install; cross-device sync and conflict recovery are not implemented.
 - Demo dashboard values are illustrative. No email, calendar, social, messaging, finance, camera, or AI integrations are connected. Voice uses browser speech APIs only; there is no connected AI voice service or saved audio recording.
 - The voice panel supports browser click-to-talk, typed messages, device text-to-speech, and simple local task/note/focus/day-summary intents. Browser coverage and processing location vary; native OS integration and secure storage are pending.
@@ -21,13 +22,13 @@
 The interface is a working prototype, not yet a connected personal agent. The next critical path is:
 
 1. **Lock the first release targets and data policy.** Choose target desktop/mobile OS, language/RTL needs, hosting or local-only mode, and an initial email/calendar/social provider. Confirm official API and account eligibility before promising an integration.
-2. **Make local data dependable.** The browser now uses IndexedDB with localStorage migration/fallback. Add a Tauri SQLite adapter, an encryption strategy, export/delete, sync outbox, and offline conflict recovery. Validate PWA install and offline behavior on real devices.
+2. **Make local data dependable.** The browser now uses IndexedDB with localStorage migration/fallback and validated workspace backup/restore. Add a Tauri SQLite adapter, an encryption strategy, per-record deletion, sync outbox, and offline conflict recovery. Validate PWA install and offline behavior on real devices.
 3. **Compile and extend the Rust service.** Install/validate the Rust toolchain, compile the health service, then add authentication, durable records, sync, jobs, action approvals, and audit history.
 4. **Connect an AI provider safely.** Add a provider adapter for chat, structured intent, retrieval, citations, and multimodal inputs; keep secrets server-side and enforce action policy in Rust. Include a local-model path only if chosen hardware meets performance needs.
 5. **Finish core workflows.** Expand study plans with recurring availability, breaks, and learning tools; add evidence-backed CV, scholarship, and email drafts; portfolio editing and versioning; social drafts, approval, and scheduling.
 6. **Package and validate voice/device support.** Check browser and OS speech behavior, microphone disclosures/permissions, no-save handling for live camera context, file/share capture, and native notification restrictions.
 7. **Add connectors with least privilege.** Implement each account separately after reviewing scopes, app approval, quotas, token revocation, and supported account types. Keep finance read-only and message sending/application submission/publishing approval-gated.
-8. **Harden and release.** Add workflow evaluations, accessibility review, backup/restore, sync and action reconciliation, operational visibility, and a privacy/permission walkthrough before release.
+8. **Harden and release.** Add workflow evaluations, accessibility review, server backup/restore, sync and action reconciliation, operational visibility, and a privacy/permission walkthrough before release.
 
 Current hard dependencies are a working Rust toolchain, the user's initial platform/provider choices, AI provider credentials or a local-model decision, and social API access where needed. The task phases below own the detailed implementation and acceptance criteria.
 
@@ -80,7 +81,7 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 - [~] **APP-005 · P0** Store source metadata, user-entered versus extracted values, confidence, and provenance. Text modality, source surface, context, timezone, language, and retention are stored; extraction/provenance review remains.
 - [ ] **APP-006 · P1** Add OCR/transcription/extraction pipeline with user correction before structured conversion.
 - [~] **APP-007 · P0** Implement cached offline data, local drafts, pending-sync queue, last-sync timestamps, and conflict resolution screen. IndexedDB local workspace and static app-shell caching exist; sync outbox/conflict handling remain.
-- [ ] **APP-008 · P1** Add retention controls, sensitivity labels, and delete/export flows for captures and derivatives.
+- [~] **APP-008 · P1** Add retention controls, sensitivity labels, and delete/export flows for captures and derivatives. Clear-all and validated local workspace backup/restore exist; per-capture retention, sensitivity controls, and derivative deletion remain.
 - [ ] **APP-009 · P0** Build Observation Mode controls: source-by-source status, last-read timeline, category exclusions, retention, pause one/pause all, and clear active-sensor indicator.
 - [~] **APP-010 · P1** Add conversational voice input and spoken output. Foreground browser speech recognition, transcript display, selectable device voices, spoken replies, and voice UI exist; browser compatibility, accessibility, permission flow, and device-local recognition need validation.
 - [~] **APP-011 · P1** Connect local voice turns to safe workspace intents. Basic task/note creation, local task summary, and focus launch exist; model-backed intent parsing, clarification, undo, and action policy remain.
@@ -181,7 +182,7 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 - [ ] **SHIP-002 · P0** Verify every external action has a policy check, approval record where required, and user-visible result.
 - [ ] **SHIP-003 · P0** Verify OAuth scopes, credential storage, session revocation, upload access controls, and data deletion/export.
 - [ ] **SHIP-004 · P0** Verify app behavior on all committed browser, desktop, and mobile targets.
-- [ ] **SHIP-005 · P1** Add backup/restore, database migrations, deployment rollback, and worker health visibility.
+- [~] **SHIP-005 · P1** Add backup/restore, database migrations, deployment rollback, and worker health visibility. Browser workspace export/restore exists; server backups, deployment rollback, and worker health remain.
 - [ ] **SHIP-006 · P1** Establish release gates from the workflow quality scorecard and evaluation scenarios.
 - [ ] **SHIP-007 · P1** Add operational dashboards for sync errors, workflow outcomes, latency, and model usage with sensitive content redacted.
 - [ ] **SHIP-008 · P1** Write onboarding, privacy controls, integration connection, and recovery documentation.

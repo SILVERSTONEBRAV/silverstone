@@ -16,6 +16,13 @@ interface WorkspaceRecord {
   state: unknown;
 }
 
+interface WorkspaceBackup {
+  format: 'silverstone-workspace-backup';
+  version: 1;
+  exportedAt: string;
+  state: LocalAppState;
+}
+
 const sampleTasks: AgentTask[] = [
   {
     id: 'task-study-1',
@@ -63,7 +70,8 @@ export function createInitialState(): LocalAppState {
 function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown };
-  if (!Array.isArray(candidate.tasks) || !Array.isArray(candidate.captures)) return null;
+  if (!Array.isArray(candidate.tasks) || !candidate.tasks.every(isAgentTask)
+    || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
       version: 2,
@@ -83,7 +91,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     && Number.isFinite((goal as StudyGoal).availableMinutesToday)
     && typeof (goal as StudyGoal).updatedAt === 'string'
   );
-  if (!validGoal) return null;
+  if (!validGoal || !candidate.studySessions.every(isStudySession)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
     ? {
@@ -98,13 +106,62 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
-    studySessions: candidate.studySessions.filter((session): session is StudySession => {
-      if (!session || typeof session !== 'object') return false;
-      const item = session as StudySession;
-      return typeof item.id === 'string' && typeof item.goalId === 'string' && typeof item.topic === 'string'
-        && Number.isFinite(item.plannedMinutes) && typeof item.completedAt === 'string';
-    }),
+    studySessions: candidate.studySessions,
   };
+}
+
+function isAgentTask(value: unknown): value is AgentTask {
+  if (!value || typeof value !== 'object') return false;
+  const task = value as Partial<AgentTask>;
+  return typeof task.id === 'string' && typeof task.title === 'string'
+    && ['Study', 'Career', 'Portfolio', 'Personal'].includes(task.category ?? '')
+    && typeof task.dueLabel === 'string' && typeof task.done === 'boolean';
+}
+
+function isCaptureItem(value: unknown): value is CaptureItem {
+  if (!value || typeof value !== 'object') return false;
+  const capture = value as Partial<CaptureItem>;
+  return typeof capture.id === 'string' && typeof capture.text === 'string'
+    && ['Note', 'Idea'].includes(capture.kind ?? '') && typeof capture.createdAt === 'string'
+    && ['text', 'voice'].includes(capture.modality ?? '') && capture.sourceSurface === 'web-app'
+    && capture.context === 'Personal' && capture.origin === 'user-entered' && capture.sensitivity === 'personal'
+    && typeof capture.timezone === 'string' && typeof capture.language === 'string'
+    && capture.retention === 'local-until-deleted';
+}
+
+function isStudySession(value: unknown): value is StudySession {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Partial<StudySession>;
+  return typeof session.id === 'string' && typeof session.goalId === 'string'
+    && typeof session.topic === 'string' && Number.isFinite(session.plannedMinutes)
+    && typeof session.completedAt === 'string';
+}
+
+export function createWorkspaceBackup(state: LocalAppState): string {
+  const backup: WorkspaceBackup = {
+    format: 'silverstone-workspace-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    state,
+  };
+  return JSON.stringify(backup, null, 2);
+}
+
+export function parseWorkspaceBackup(serialized: string): LocalAppState {
+  let backup: unknown;
+  try {
+    backup = JSON.parse(serialized);
+  } catch {
+    throw new Error('This file is not valid JSON. Choose a Silverstone backup file.');
+  }
+  if (!backup || typeof backup !== 'object') throw new Error('This file is not a Silverstone backup.');
+  const candidate = backup as Partial<WorkspaceBackup>;
+  if (candidate.format !== 'silverstone-workspace-backup' || candidate.version !== 1) {
+    throw new Error('This backup format is not supported.');
+  }
+  const state = normalizeLocalAppState(candidate.state);
+  if (!state) throw new Error('The backup contains invalid workspace data.');
+  return state;
 }
 
 function openDatabase(): Promise<IDBDatabase> {

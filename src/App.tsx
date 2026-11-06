@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Icon, type IconName } from './Icon';
-import { clearLocalState, createId, createInitialState, loadLocalState, localDateKey, saveLocalState } from './store';
+import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { AgentTask, CaptureItem, LocalAppState, PageKey, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 
@@ -185,6 +185,13 @@ function App() {
     setToast('Study goal saved on this device');
   }
 
+  async function restoreWorkspace(serializedBackup: string) {
+    const restoredState = parseWorkspaceBackup(serializedBackup);
+    await saveLocalState(restoredState);
+    setAppState(restoredState);
+    setToast('Backup restored on this device');
+  }
+
   function completeFocusSession() {
     if (!focusDetails.studyGoalId) return;
     const session: StudySession = {
@@ -295,7 +302,7 @@ function App() {
               onToast={setToast}
             />
           ) : activePage === 'settings' ? (
-            <SettingsPage theme={theme} onThemeChange={setTheme} onReset={resetWorkspace} onToast={setToast} />
+            <SettingsPage state={appState} theme={theme} onThemeChange={setTheme} onImport={restoreWorkspace} onReset={resetWorkspace} onToast={setToast} />
           ) : (
             <ModulePage
               page={activePage}
@@ -766,13 +773,53 @@ function ActivityModule({ state }: { state: LocalAppState }) {
   );
 }
 
-function SettingsPage({ theme, onThemeChange, onReset, onToast }: { theme: Theme; onThemeChange: (theme: Theme) => void; onReset: () => void; onToast: (message: string) => void }) {
+function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast }: {
+  state: LocalAppState;
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
+  onImport: (serializedBackup: string) => Promise<void>;
+  onReset: () => void;
+  onToast: (message: string) => void;
+}) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  function exportBackup() {
+    const blob = new Blob([createWorkspaceBackup(state)], { type: 'application/json' });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = `silverstone-backup-${localDateKey()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    onToast('Backup downloaded. Keep the unencrypted file somewhere safe.');
+  }
+
+  async function importBackup(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
+      const serializedBackup = await file.text();
+      parseWorkspaceBackup(serializedBackup);
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study goal, and study progress currently stored in this browser?')) return;
+      await onImport(serializedBackup);
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
+    } finally {
+      input.value = '';
+    }
+  }
+
   return (
     <>
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, and study progress from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, and study progress stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal, and completed study sessions. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="CONNECTIONS" title="No services connected" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
     </>

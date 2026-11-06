@@ -423,6 +423,14 @@ h1, h2, h3, p { margin-top: 0; }
 .local-data-card > span:last-child { display: flex; flex-direction: column; gap: 5px; }
 .local-data-card strong { color: var(--ink); font-size: 9px; font-weight: 600; }
 .local-data-card small { color: var(--muted); font-size: 8px; line-height: 1.5; }
+.backup-summary { display: flex; align-items: flex-start; gap: 10px; padding: 12px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; }
+.backup-summary-icon { display: grid; place-items: center; width: 29px; height: 29px; flex: 0 0 auto; color: #6871d8; background: var(--purple-soft); border-radius: 7px; }
+.backup-summary > div { display: flex; flex-direction: column; gap: 5px; }
+.backup-summary strong { color: var(--ink); font-size: 9px; font-weight: 600; }
+.backup-summary p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.backup-actions .button { min-height: 33px; font-size: 9px; }
+.backup-file-input { display: none; }
 .setting-row-danger { margin-top: 10px; }
 .danger-symbol { color: #b86868; background: #fff0f0; }
 .empty-connection { display: flex; align-items: center; gap: 12px; min-height: 75px; padding: 8px 0; border-top: 1px solid var(--line); }
