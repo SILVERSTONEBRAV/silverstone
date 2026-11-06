@@ -1,4 +1,4 @@
-import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession } from './types';
+import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerDraft, CareerDraftKind, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, LocalAppState, OpportunityStage, PortfolioProject, PortfolioProjectVersion, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession } from './types';
 
 const DATABASE_NAME = 'silverstone-local';
 const DATABASE_VERSION = 1;
@@ -59,7 +59,7 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 12,
+    version: 13,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
@@ -72,17 +72,18 @@ export function createInitialState(): LocalAppState {
     starStories: [],
     careerEvidence: [],
     emailItems: [],
+    careerDrafts: [],
   };
 }
 
 function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown; interviewPreps?: unknown; starStories?: unknown; careerEvidence?: unknown; emailItems?: unknown };
+  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown; careerOpportunities?: unknown; socialPosts?: unknown; studyCards?: unknown; interviewPreps?: unknown; starStories?: unknown; careerEvidence?: unknown; emailItems?: unknown; careerDrafts?: unknown };
   if (!Array.isArray(candidate.tasks) || !candidate.tasks.every(isAgentTask)
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 12,
+      version: 13,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
@@ -95,10 +96,11 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       starStories: [],
       careerEvidence: [],
       emailItems: [],
+      careerDrafts: [],
     };
   }
   const version = candidate.version;
-  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(version) || !Array.isArray(candidate.studySessions)) return null;
+  if (typeof version !== 'number' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(version) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -131,6 +133,8 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!Array.isArray(careerEvidence) || !careerEvidence.every(isCareerEvidence)) return null;
   const emailItems = version >= 12 ? candidate.emailItems : [];
   if (!Array.isArray(emailItems) || emailItems.length > 100 || !emailItems.every(isEmailItem)) return null;
+  const careerDrafts = version >= 13 ? candidate.careerDrafts : [];
+  if (!Array.isArray(careerDrafts) || careerDrafts.length > 100 || !careerDrafts.every(isCareerDraft)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
     ? {
@@ -141,7 +145,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 12,
+    version: 13,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
@@ -154,6 +158,7 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     starStories,
     careerEvidence,
     emailItems,
+    careerDrafts,
   };
 }
 
@@ -400,6 +405,21 @@ function isEmailItem(value: unknown): value is EmailItem {
     && validDate(email.followUpDue) && typeof email.replyDraft === 'string' && email.replyDraft.length <= 8000
     && typeof email.createdAt === 'string' && Number.isFinite(Date.parse(email.createdAt))
     && typeof email.updatedAt === 'string' && Number.isFinite(Date.parse(email.updatedAt));
+}
+
+function isCareerDraft(value: unknown): value is CareerDraft {
+  if (!value || typeof value !== 'object') return false;
+  const draft = value as Partial<CareerDraft>;
+  const kinds: CareerDraftKind[] = ['CV excerpt', 'Cover letter', 'Scholarship statement outline'];
+  return typeof draft.id === 'string' && kinds.includes(draft.kind as CareerDraftKind)
+    && typeof draft.title === 'string' && draft.title.trim().length > 0 && draft.title.length <= 180
+    && (draft.opportunityId === undefined || typeof draft.opportunityId === 'string')
+    && typeof draft.targetRole === 'string' && draft.targetRole.length <= 160
+    && typeof draft.organization === 'string' && draft.organization.length <= 160
+    && typeof draft.content === 'string' && draft.content.length <= 20000
+    && Array.isArray(draft.evidenceIds) && draft.evidenceIds.length <= 40 && draft.evidenceIds.every((id) => typeof id === 'string')
+    && typeof draft.createdAt === 'string' && Number.isFinite(Date.parse(draft.createdAt))
+    && typeof draft.updatedAt === 'string' && Number.isFinite(Date.parse(draft.updatedAt));
 }
 
 export function createWorkspaceBackup(state: LocalAppState): string {

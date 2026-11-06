@@ -231,8 +231,23 @@ export interface CareerEvidence {
   updatedAt: string;
 }
 
+export type CareerDraftKind = 'CV excerpt' | 'Cover letter' | 'Scholarship statement outline';
+
+export interface CareerDraft {
+  id: string;
+  kind: CareerDraftKind;
+  title: string;
+  opportunityId?: string;
+  targetRole: string;
+  organization: string;
+  content: string;
+  evidenceIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LocalAppState {
-  version: 12;
+  version: 13;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
@@ -245,4 +260,5 @@ export interface LocalAppState {
   starStories: StarStory[];
   careerEvidence: CareerEvidence[];
   emailItems: EmailItem[];
+  careerDrafts: CareerDraft[];
 }

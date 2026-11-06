@@ -1088,6 +1088,65 @@ button.radar-row:hover { background: var(--surface-soft); padding-left: 6px; pad
 .email-reply-tools select { width: 100%; min-height: 38px; padding: 9px 11px; color: var(--ink); background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 8px; font-size: 10px; }
 .email-review-hint { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
 
+.career-draft-studio { display: flex; flex-direction: column; gap: 14px; }
+.career-draft-panel { display: flex; flex-direction: column; gap: 12px; }
+.career-draft-intro, .career-draft-dialog-warning, .career-draft-linked-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; color: var(--muted-strong); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; font-size: 9px; line-height: 1.5; }
+.career-draft-intro > svg, .career-draft-dialog-warning > svg, .career-draft-linked-note > svg { flex: 0 0 auto; color: #6269c1; margin-top: 1px; }
+.career-draft-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.career-draft-card { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.career-draft-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.career-draft-kind { color: #6068c8; font: 700 8px 'DM Mono', monospace; letter-spacing: .45px; text-transform: uppercase; }
+.career-draft-card h3 { margin: 5px 0 3px; color: var(--ink-strong); font-size: 12px; overflow-wrap: anywhere; }
+.career-draft-card-head p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.4; }
+.career-draft-date { flex: 0 0 auto; color: var(--muted); font: 8px 'DM Mono', monospace; }
+.career-draft-source-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+.career-draft-source-summary > span { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; color: var(--muted-strong); background: var(--surface-soft); border-radius: 5px; font-size: 8px; }
+.career-draft-source-summary > .career-draft-warning { color: #916118; background: #fff6e9; }
+.career-draft-preview { padding: 9px 10px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 7px; }
+.career-draft-preview summary { color: var(--ink); font-size: 9px; font-weight: 600; cursor: pointer; }
+.career-draft-preview pre { max-height: 260px; overflow: auto; margin: 8px 0 0; color: var(--muted-strong); font: inherit; font-size: 9px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.career-draft-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
+.career-draft-actions .button { padding: 6px 9px; font-size: 8px; }
+.career-draft-remove { margin-left: auto; color: #a44d4d; }
+.career-draft-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 34px 18px; color: var(--muted); text-align: center; }
+.career-draft-empty strong { color: var(--ink); font-size: 12px; }
+.career-draft-empty > span:not(.empty-icon) { max-width: 440px; font-size: 9px; line-height: 1.55; }
+.career-draft-empty .button { margin-top: 4px; }
+.career-draft-dialog { width: min(100%, 800px); }
+.career-draft-dialog form { display: flex; flex-direction: column; gap: 8px; }
+.career-draft-dialog .field-label { margin-bottom: 3px; }
+.career-draft-evidence-picker { display: flex; flex-direction: column; gap: 8px; padding: 11px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 9px; }
+.career-draft-picker-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.career-draft-picker-head > span { display: flex; flex-direction: column; gap: 3px; }
+.career-draft-picker-head strong { color: var(--ink); font-size: 9px; }
+.career-draft-picker-head small { color: var(--muted); font-size: 8px; }
+.career-draft-picker-head .button { min-height: 30px; padding: 6px 9px; font-size: 8px; }
+.career-draft-picker-list { max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+.career-draft-picker-item { display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+.career-draft-picker-item input { flex: 0 0 auto; accent-color: #6269c1; }
+.career-draft-picker-item > span { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.career-draft-picker-item strong { color: var(--ink); font-size: 9px; overflow-wrap: anywhere; }
+.career-draft-picker-item small { color: var(--muted); font-size: 8px; }
+.career-draft-source-link { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; color: #5961b9; font-size: 8px; text-decoration: none; }
+.career-draft-source-link:hover { text-decoration: underline; }
+.career-draft-picker-item em { flex: 0 0 auto; font-size: 8px; font-style: normal; }
+.draft-source-verified { color: #377653; }
+.draft-source-review { color: #a06a1c; }
+.career-draft-no-evidence { padding: 12px; color: var(--muted); background: var(--surface); border: 1px dashed var(--line-strong); border-radius: 7px; font-size: 8px; line-height: 1.5; }
+.career-draft-dialog-warning { color: #875b18; background: #fff8ec; border-color: #f0ddbd; }
+.career-draft-dialog-warning > svg { color: #a87925; }
+.career-draft-linked-note { align-items: center; }
+
+@media (max-width: 640px) {
+  .career-draft-list { grid-template-columns: minmax(0, 1fr); }
+  .career-draft-card-head { flex-direction: column; }
+  .career-draft-date { order: -1; }
+  .career-draft-picker-head { align-items: flex-start; flex-direction: column; }
+  .career-draft-picker-head .button { align-self: flex-start; }
+  .career-draft-picker-item { align-items: flex-start; flex-wrap: wrap; }
+  .career-draft-picker-item > span { min-width: calc(100% - 36px); }
+}
+
 .competency-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .competency-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; color: #5a64ce; background: #eeefff; border-radius: 4px; font-size: 8px; font-family: 'DM Mono', monospace; font-weight: 600; }
 

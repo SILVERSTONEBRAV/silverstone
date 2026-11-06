@@ -3,7 +3,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
-import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerDraft, CareerDraftKind, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 import { DEFAULT_QUESTIONS_BY_FORMAT, DEFAULT_QUESTIONS_TO_ASK, INTERVIEW_FORMATS, analyzeFillerWords, assessInterviewAnswer, calculateReadiness } from './interview';
 
@@ -107,6 +107,7 @@ function App() {
   const [studyCardEditor, setStudyCardEditor] = useState<StudyCard | null | undefined>(undefined);
   const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
   const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
+  const [careerDraftEditor, setCareerDraftEditor] = useState<CareerDraft | null | undefined>(undefined);
   const [emailEditor, setEmailEditor] = useState<EmailItem | null | undefined>(undefined);
   const [evidenceEditor, setEvidenceEditor] = useState<CareerEvidence | null | undefined>(undefined);
   const [interviewEditor, setInterviewEditor] = useState<{ prep: InterviewPrep | null; opportunityId?: string } | undefined>(undefined);
@@ -310,6 +311,27 @@ function App() {
     });
     setCareerEditor(undefined);
     setToast('Opportunity saved locally');
+  }
+
+  function saveCareerDraft(draft: Omit<CareerDraft, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) {
+    const updatedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.careerDrafts.find((item) => item.id === draft.id);
+      const record: CareerDraft = existing
+        ? { ...existing, ...draft, id: existing.id, updatedAt }
+        : { ...draft, id: createId('career-draft'), createdAt: updatedAt, updatedAt };
+      const careerDrafts = existing
+        ? current.careerDrafts.map((item) => item.id === existing.id ? record : item)
+        : [record, ...current.careerDrafts];
+      return { ...current, careerDrafts };
+    });
+    setCareerDraftEditor(undefined);
+    setToast(draft.id ? 'Application draft updated locally' : 'Application draft saved locally');
+  }
+
+  function deleteCareerDraft(id: string) {
+    setAppState((current) => ({ ...current, careerDrafts: current.careerDrafts.filter((item) => item.id !== id) }));
+    setToast('Application draft removed');
   }
 
   function saveEmailItem(draft: Omit<EmailItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) {
@@ -529,7 +551,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 12, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [], emailItems: [] });
+      setAppState({ version: 13, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [], interviewPreps: [], starStories: [], careerEvidence: [], emailItems: [], careerDrafts: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -628,6 +650,9 @@ function App() {
               onCreateEmail={() => setEmailEditor(null)}
               onEditEmail={setEmailEditor}
               onDeleteEmail={deleteEmailItem}
+              onCreateCareerDraft={() => setCareerDraftEditor(null)}
+              onEditCareerDraft={setCareerDraftEditor}
+              onDeleteCareerDraft={deleteCareerDraft}
             />
           )}
         </main>
@@ -660,6 +685,7 @@ function App() {
       {studyCardEditor !== undefined && <StudyCardDialog current={studyCardEditor} defaultTopic={appState.studyGoal?.topic ?? ''} onSave={saveStudyCard} onClose={() => setStudyCardEditor(undefined)} />}
       {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
       {careerEditor !== undefined && <CareerOpportunityDialog current={careerEditor} onSave={saveCareerOpportunity} onClose={() => setCareerEditor(undefined)} />}
+      {careerDraftEditor !== undefined && <CareerDraftDialog current={careerDraftEditor} opportunities={appState.careerOpportunities} evidence={appState.careerEvidence} onSave={saveCareerDraft} onClose={() => setCareerDraftEditor(undefined)} />}
       {emailEditor !== undefined && <EmailDialog current={emailEditor} onSave={saveEmailItem} onClose={() => setEmailEditor(undefined)} />}
       {evidenceEditor !== undefined && <CareerEvidenceDialog current={evidenceEditor} onSave={saveCareerEvidence} onClose={() => setEvidenceEditor(undefined)} />}
       {interviewEditor !== undefined && (
@@ -1004,7 +1030,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateStory, onEditStory, onDeleteStory, onCreateEvidence, onEditEvidence, onDeleteEvidence, onCreateSocialPost, onEditSocialPost, onCreateEmail, onEditEmail, onDeleteEmail }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateInterview, onEditInterview, onPracticeInterview, onDeleteInterview, onCreateStory, onEditStory, onDeleteStory, onCreateEvidence, onEditEvidence, onDeleteEvidence, onCreateSocialPost, onEditSocialPost, onCreateEmail, onEditEmail, onDeleteEmail, onCreateCareerDraft, onEditCareerDraft, onDeleteCareerDraft }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -1035,6 +1061,9 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onCreateEmail: () => void;
   onEditEmail: (email: EmailItem) => void;
   onDeleteEmail: (id: string) => void;
+  onCreateCareerDraft: () => void;
+  onEditCareerDraft: (draft: CareerDraft) => void;
+  onDeleteCareerDraft: (id: string) => void;
 }) {
   const copy = pageCopy[page];
   return (
@@ -1053,6 +1082,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
           interviewPreps={state.interviewPreps}
           starStories={state.starStories}
           careerEvidence={state.careerEvidence}
+          careerDrafts={state.careerDrafts}
           onCreate={onCreateOpportunity}
           onEdit={onEditOpportunity}
           onCreateInterview={onCreateInterview}
@@ -1065,6 +1095,9 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
           onCreateEvidence={onCreateEvidence}
           onEditEvidence={onEditEvidence}
           onDeleteEvidence={onDeleteEvidence}
+          onCreateCareerDraft={onCreateCareerDraft}
+          onEditCareerDraft={onEditCareerDraft}
+          onDeleteCareerDraft={onDeleteCareerDraft}
         />
       )}
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
@@ -1141,14 +1174,19 @@ function CareerModule({
   onEditStory,
   onDeleteStory,
   careerEvidence,
+  careerDrafts,
   onCreateEvidence,
   onEditEvidence,
   onDeleteEvidence,
+  onCreateCareerDraft,
+  onEditCareerDraft,
+  onDeleteCareerDraft,
 }: {
   opportunities: CareerOpportunity[];
   interviewPreps: InterviewPrep[];
   starStories: StarStory[];
   careerEvidence: CareerEvidence[];
+  careerDrafts: CareerDraft[];
   onCreate: () => void;
   onEdit: (opportunity: CareerOpportunity) => void;
   onCreateInterview: (opportunityId?: string) => void;
@@ -1161,8 +1199,11 @@ function CareerModule({
   onCreateEvidence: () => void;
   onEditEvidence: (evidence: CareerEvidence) => void;
   onDeleteEvidence: (id: string) => void;
+  onCreateCareerDraft: () => void;
+  onEditCareerDraft: (draft: CareerDraft) => void;
+  onDeleteCareerDraft: (id: string) => void;
 }) {
-  const [tab, setTab] = useState<'pipeline' | 'interviews' | 'evidence'>('pipeline');
+  const [tab, setTab] = useState<'pipeline' | 'interviews' | 'evidence' | 'drafts'>('pipeline');
   const activeOpportunities = opportunities.filter((item) => item.stage !== 'Closed');
   const thisMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const dueThisMonth = activeOpportunities.filter((item) => item.deadline.startsWith(thisMonth)).length;
@@ -1198,6 +1239,13 @@ function CareerModule({
           onClick={() => setTab('evidence')}
         >
           <Icon name="library" size={15} /> Evidence Library ({careerEvidence.length})
+        </button>
+        <button
+          type="button"
+          className={`subnav-btn ${tab === 'drafts' ? 'is-active' : ''}`}
+          onClick={() => setTab('drafts')}
+        >
+          <Icon name="file" size={15} /> Application Drafts ({careerDrafts.length})
         </button>
       </div>
 
@@ -1339,7 +1387,7 @@ function CareerModule({
             </div>
           </section>
         </>
-      ) : <CareerEvidenceLibrary evidence={careerEvidence} onCreate={onCreateEvidence} onEdit={onEditEvidence} onDelete={onDeleteEvidence} />}
+      ) : tab === 'evidence' ? <CareerEvidenceLibrary evidence={careerEvidence} onCreate={onCreateEvidence} onEdit={onEditEvidence} onDelete={onDeleteEvidence} /> : <CareerDraftStudio drafts={careerDrafts} evidence={careerEvidence} opportunities={opportunities} onCreate={onCreateCareerDraft} onEdit={onEditCareerDraft} onDelete={onDeleteCareerDraft} />}
 
       <section className="panel module-panel story-bank-panel">
         <PanelHeading eyebrow="REUSABLE INTERVIEW EVIDENCE" title="Your STAR story bank" action="Add a story" onAction={onCreateStory} />
@@ -1376,6 +1424,125 @@ function CareerModule({
       </section>
     </div>
   );
+}
+
+function buildCareerDraftContent(kind: CareerDraftKind, targetRole: string, organization: string, selectedEvidence: CareerEvidence[]): string {
+  const facts = selectedEvidence.length
+    ? selectedEvidence.map((item) => {
+      const context = [item.organization, item.timeframe].filter(Boolean).join(' · ');
+      return `• ${item.title}${context ? ` — ${context}` : ''}${item.details ? `\n  ${item.details}` : ''}${item.skills.length ? `\n  Skills: ${item.skills.join(', ')}` : ''}`;
+    }).join('\n\n')
+    : '[Select relevant career evidence, then generate this draft.]';
+
+  if (kind === 'CV excerpt') return `SELECTED CAREER EVIDENCE\n\n${facts}\n\nSKILLS\n${selectedEvidence.flatMap((item) => item.skills).filter((skill, index, all) => all.indexOf(skill) === index).map((skill) => `• ${skill}`).join('\n') || '[Add skills supported by your records.]'}`;
+  if (kind === 'Cover letter') return `Dear Hiring Team,\n\nI am applying for ${targetRole || '[Role]'} at ${organization || '[Organization]'}. The following selected experience may be relevant:\n\n${facts}\n\n[Connect these facts to the role using accurate details. Add a specific reason for your interest and review every claim before use.]\n\nThank you for your consideration.\n\n[Your Name]`;
+  return `SCHOLARSHIP STATEMENT OUTLINE\n\n1. Motivation\n[Explain why you are applying and what motivates your field of study.]\n\n2. Relevant preparation and experience\n${facts}\n\n3. Learning and career goals\n[Describe your goals and how this scholarship would support them.]\n\n4. Contribution and fit\n[Explain how you meet the published criteria, using accurate, specific examples.]\n\n5. Final review\n[Check eligibility, word limits, required prompts, and every factual claim.]`;
+}
+
+function CareerDraftStudio({ drafts, evidence, opportunities, onCreate, onEdit, onDelete }: {
+  drafts: CareerDraft[];
+  evidence: CareerEvidence[];
+  opportunities: CareerOpportunity[];
+  onCreate: () => void;
+  onEdit: (draft: CareerDraft) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyErrorId, setCopyErrorId] = useState<string | null>(null);
+  const verifiedEvidenceCount = evidence.filter((item) => Boolean(item.verifiedAt && (item.sourceLabel.trim() || item.sourceUrl.trim()))).length;
+  const reviewCount = drafts.filter((draft) => draft.evidenceIds.some((id) => {
+    const item = evidence.find((candidate) => candidate.id === id);
+    return !item || !item.verifiedAt || !(item.sourceLabel.trim() || item.sourceUrl.trim());
+  })).length;
+
+  async function copyDraft(draft: CareerDraft) {
+    try {
+      await navigator.clipboard.writeText(draft.content);
+      setCopiedId(draft.id);
+      setCopyErrorId(null);
+      window.setTimeout(() => setCopiedId((current) => current === draft.id ? null : current), 1800);
+    } catch {
+      setCopiedId(null);
+      setCopyErrorId(draft.id);
+      window.setTimeout(() => setCopyErrorId((current) => current === draft.id ? null : current), 2200);
+    }
+  }
+
+  return (
+    <div className="career-draft-studio">
+      <section className="module-stats">
+        <MiniStat value={String(drafts.length)} label="Saved application drafts" icon="file" />
+        <MiniStat value={String(verifiedEvidenceCount)} label="Evidence checked by you" icon="check" />
+        <MiniStat value={String(reviewCount)} label="Drafts needing source review" icon="shield" />
+      </section>
+      <section className="panel module-panel career-draft-panel">
+        <PanelHeading eyebrow="EVIDENCE-LINKED APPLICATION MATERIAL" title="Application Draft Studio" action="Create a draft" onAction={onCreate} />
+        <div className="career-draft-intro"><Icon name="shield" size={15} /><span>Templates use only the records you select. Review every statement and source before using it; verification means you checked the record, not that Silverstone independently confirmed it.</span></div>
+        {drafts.length ? <div className="career-draft-list">{[...drafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((draft) => {
+          const linkedEvidence = draft.evidenceIds.map((id) => evidence.find((item) => item.id === id));
+          const missingCount = linkedEvidence.filter((item) => !item).length;
+          const unverifiedCount = linkedEvidence.filter((item) => item && (!item.verifiedAt || !(item.sourceLabel.trim() || item.sourceUrl.trim()))).length;
+          const opportunity = opportunities.find((item) => item.id === draft.opportunityId);
+          return <article className="career-draft-card" key={draft.id}>
+            <div className="career-draft-card-head"><div><span className="career-draft-kind">{draft.kind}</span><h3>{draft.title}</h3><p>{draft.targetRole || 'No role or program'}{draft.organization ? ` · ${draft.organization}` : ''}{opportunity ? ` · Linked to ${opportunity.kind.toLowerCase()}` : ''}</p></div><span className="career-draft-date">Updated {formatPlannedTime(draft.updatedAt)}</span></div>
+            <div className="career-draft-source-summary"><span><Icon name="library" size={13} /> {draft.evidenceIds.length} linked record{draft.evidenceIds.length === 1 ? '' : 's'}</span>{missingCount > 0 && <span className="career-draft-warning"><Icon name="shield" size={12} /> {missingCount} missing record{missingCount === 1 ? '' : 's'}</span>}{unverifiedCount > 0 && <span className="career-draft-warning"><Icon name="clock" size={12} /> {unverifiedCount} need review</span>}{draft.evidenceIds.length === 0 && <span className="career-draft-warning"><Icon name="shield" size={12} /> No evidence linked</span>}</div>
+            <details className="career-draft-preview"><summary>Preview draft</summary><pre>{draft.content || 'Draft is empty.'}</pre></details>
+            <div className="career-draft-actions"><button className="button button-secondary" onClick={() => onEdit(draft)}><Icon name="more" size={13} /> Edit and review</button><button className="button button-secondary" onClick={() => void copyDraft(draft)}><Icon name="file" size={13} /> {copiedId === draft.id ? 'Copied' : copyErrorId === draft.id ? 'Copy unavailable' : 'Copy text'}</button><button className="text-action career-draft-remove" onClick={() => { if (window.confirm(`Remove “${draft.title}”?`)) onDelete(draft.id); }}><Icon name="close" size={13} /> Remove</button></div>
+          </article>;
+        })}</div> : <div className="career-draft-empty"><span className="empty-icon"><Icon name="file" /></span><strong>Prepare application material from your own records.</strong><span>Create a CV excerpt, cover letter, or scholarship statement outline. Choose the career evidence you want to cite and review its source status.</span><button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={14} /> Create your first draft</button></div>}
+      </section>
+    </div>
+  );
+}
+
+function CareerDraftDialog({ current, opportunities, evidence, onSave, onClose }: {
+  current: CareerDraft | null;
+  opportunities: CareerOpportunity[];
+  evidence: CareerEvidence[];
+  onSave: (draft: Omit<CareerDraft, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => void;
+  onClose: () => void;
+}) {
+  const [kind, setKind] = useState<CareerDraftKind>(current?.kind ?? 'CV excerpt');
+  const [title, setTitle] = useState(current?.title ?? '');
+  const [opportunityId, setOpportunityId] = useState(current?.opportunityId ?? '');
+  const [targetRole, setTargetRole] = useState(current?.targetRole ?? '');
+  const [organization, setOrganization] = useState(current?.organization ?? '');
+  const [evidenceIds, setEvidenceIds] = useState<string[]>(current?.evidenceIds ?? []);
+  const [content, setContent] = useState(current?.content ?? '');
+  const linkedEvidence = evidence.filter((item) => evidenceIds.includes(item.id));
+  const missingCount = evidenceIds.filter((id) => !evidence.some((item) => item.id === id)).length;
+  const unverifiedCount = linkedEvidence.filter((item) => !item.verifiedAt || !(item.sourceLabel.trim() || item.sourceUrl.trim())).length;
+  const selectedOpportunity = opportunities.find((item) => item.id === opportunityId);
+
+  function generate() {
+    setContent(buildCareerDraftContent(kind, targetRole.trim(), organization.trim(), linkedEvidence));
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onSave({ id: current?.id, kind, title: title.trim(), opportunityId: opportunityId || undefined, targetRole: targetRole.trim(), organization: organization.trim(), content: content.trim(), evidenceIds: [...new Set(evidenceIds)].slice(0, 40) });
+  }
+
+  return <div className="modal-scrim career-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="dialog-card career-dialog career-draft-dialog" role="dialog" aria-modal="true" aria-labelledby="career-draft-dialog-title">
+    <div className="dialog-top"><span className="dialog-icon"><Icon name="file" size={18} /></span><button className="icon-button" aria-label="Close application draft editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+    <span className="panel-eyebrow">CAREER · DRAFT STUDIO</span><h2 id="career-draft-dialog-title">{current ? 'Review your application draft.' : 'Start with evidence you trust.'}</h2><p>This local template does not send applications or invent experience. Select records, generate a starting structure, then edit and verify it yourself.</p>
+    <form onSubmit={submit}>
+      <div className="career-form-grid"><div><label className="field-label" htmlFor="career-draft-kind">Draft type</label><select id="career-draft-kind" value={kind} onChange={(event) => setKind(event.target.value as CareerDraftKind)}>{(['CV excerpt', 'Cover letter', 'Scholarship statement outline'] as CareerDraftKind[]).map((item) => <option key={item}>{item}</option>)}</select></div><div><label className="field-label" htmlFor="career-draft-title">Draft title</label><input id="career-draft-title" required maxLength={180} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Research fellowship application" /></div></div>
+      <label className="field-label" htmlFor="career-draft-opportunity">Link an opportunity (optional)</label><select id="career-draft-opportunity" value={opportunityId} onChange={(event) => { const id = event.target.value; const selected = opportunities.find((item) => item.id === id); setOpportunityId(id); if (selected) { setTargetRole(selected.title); setOrganization(selected.organization); } }}><option value="">No linked opportunity</option>{opportunities.map((item) => <option key={item.id} value={item.id}>{item.kind}: {item.title} · {item.organization}</option>)}</select>
+      <div className="career-form-grid"><div><label className="field-label" htmlFor="career-draft-role">Role or program</label><input id="career-draft-role" maxLength={160} value={targetRole} onChange={(event) => setTargetRole(event.target.value)} placeholder="Role, course, or program" /></div><div><label className="field-label" htmlFor="career-draft-organization">Organization</label><input id="career-draft-organization" maxLength={160} value={organization} onChange={(event) => setOrganization(event.target.value)} placeholder="Employer, school, or funder" /></div></div>
+      <div className="career-draft-evidence-picker"><div className="career-draft-picker-head"><span><strong>Choose evidence to include</strong><small>{evidence.length ? 'Only selected records are copied into the generated structure.' : 'Add records in the Evidence Library first.'}</small></span><button className="button button-secondary" type="button" onClick={generate} disabled={!evidenceIds.length}>Generate structure</button></div>
+        {evidence.length ? <div className="career-draft-picker-list">{evidence.map((item) => {
+          const hasSource = Boolean(item.sourceLabel.trim() || item.sourceUrl.trim());
+          const verified = Boolean(item.verifiedAt && hasSource);
+          return <div className="career-draft-picker-item" key={item.id}><input type="checkbox" aria-label={`Include ${item.title}`} checked={evidenceIds.includes(item.id)} onChange={(event) => setEvidenceIds((ids) => event.target.checked ? [...new Set([...ids, item.id])].slice(0, 40) : ids.filter((id) => id !== item.id))} /><span><strong>{item.title}</strong><small>{[item.kind, item.organization, item.timeframe].filter(Boolean).join(' · ') || 'Career record'}</small><small>{hasSource ? `Source: ${item.sourceLabel || 'Saved source link'}` : 'No source recorded'}</small></span>{item.sourceUrl && <a className="career-draft-source-link" href={item.sourceUrl} target="_blank" rel="noreferrer">Open source <Icon name="external" size={11} /></a>}<em className={verified ? 'draft-source-verified' : 'draft-source-review'}>{verified ? 'Checked by you' : hasSource ? 'Needs review' : 'No source'}</em></div>;
+        })}</div> : <div className="career-draft-no-evidence">Your facts stay yours. Add a sourced record to the Evidence Library before generating a draft.</div>}
+      </div>
+      {(missingCount > 0 || unverifiedCount > 0 || evidenceIds.length === 0) && <div className="career-draft-dialog-warning"><Icon name="shield" size={14} /><span>{missingCount > 0 ? `${missingCount} selected record${missingCount === 1 ? ' is' : 's are'} no longer in the library. ` : ''}{unverifiedCount > 0 ? `${unverifiedCount} selected record${unverifiedCount === 1 ? ' needs' : 's need'} a source review. ` : ''}{evidenceIds.length === 0 ? 'Select a record to generate a structure, or write your own draft below.' : 'Verification is user-confirmed and is not an independent fact check.'}</span></div>}
+      {selectedOpportunity && <div className="career-draft-linked-note"><Icon name="external" size={13} /> Linked to {selectedOpportunity.kind.toLowerCase()} · {selectedOpportunity.title}</div>}
+      <label className="field-label" htmlFor="career-draft-content">Draft content · review and edit before use</label><textarea id="career-draft-content" rows={13} maxLength={20000} value={content} onChange={(event) => setContent(event.target.value)} placeholder="Choose evidence and generate a starting structure, or write your draft here." />
+      <div className="dialog-foot"><span><Icon name="shield" size={13} /> Stored in your local workspace</span><div className="career-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim() || !content.trim()}>{current ? 'Save draft' : 'Save draft'}<Icon name="arrow" size={14} /></button></div></div>
+    </form>
+  </section></div>;
 }
 
 function CareerEvidenceLibrary({ evidence, onCreate, onEdit, onDelete }: {
@@ -2958,7 +3125,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, career evidence records, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social post drafts currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, interview preparations and answers, STAR story bank, career evidence records and linked application drafts, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social post drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -2972,8 +3139,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onRestoreCloud, o
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, career evidence records, portfolio drafts, career opportunities, social drafts, email messages and reply drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence records, recall cards, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, career evidence records, portfolio drafts with saved versions, career opportunities and scholarship checklists, email messages and reply drafts, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, interview preparations and answers, STAR stories, career evidence and application drafts, portfolio drafts, career opportunities, social drafts, email messages and reply drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep highly sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence and application drafts, recall cards, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, interview preparations and answers, STAR stories, career evidence and application drafts, recall cards, portfolio drafts, career opportunities and scholarship checklists, email messages and reply drafts, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, interview preparations and answers, the STAR story bank, career evidence and evidence-linked application drafts, portfolio drafts with saved versions, career opportunities and scholarship checklists, email messages and reply drafts, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it automatically.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <CloudWorkspacePanel workspace={state} onRestore={onRestoreCloud} />
         <section className="panel settings-panel"><PanelHeading eyebrow="APP CONNECTIONS" title="External services" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
