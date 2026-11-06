@@ -51,6 +51,19 @@ export interface StudySession {
   completedAt: string;
 }
 
+export interface StudyCard {
+  id: string;
+  topic: string;
+  question: string;
+  answer: string;
+  nextReviewAt: string;
+  intervalDays: number;
+  reviewCount: number;
+  lastReviewedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PortfolioProjectVersion {
   id: string;
   title: string;
@@ -98,7 +111,7 @@ export interface SocialPostDraft {
 }
 
 export interface LocalAppState {
-  version: 5;
+  version: 6;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
@@ -106,4 +119,5 @@ export interface LocalAppState {
   portfolioProjects: PortfolioProject[];
   careerOpportunities: CareerOpportunity[];
   socialPosts: SocialPostDraft[];
+  studyCards: StudyCard[];
 }

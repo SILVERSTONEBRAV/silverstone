@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
-import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, CareerOpportunity, CaptureItem, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 
 type ModalMode = 'task' | 'capture' | null;
@@ -72,6 +72,7 @@ function App() {
   const [focusOpen, setFocusOpen] = useState(false);
   const [focusDetails, setFocusDetails] = useState({ title: 'Focused work', minutes: 25, studyGoalId: '' });
   const [studyGoalOpen, setStudyGoalOpen] = useState(false);
+  const [studyCardEditor, setStudyCardEditor] = useState<StudyCard | null | undefined>(undefined);
   const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
   const [careerEditor, setCareerEditor] = useState<CareerOpportunity | null | undefined>(undefined);
   const [socialEditor, setSocialEditor] = useState<SocialPostDraft | null | undefined>(undefined);
@@ -143,6 +144,7 @@ function App() {
         setVoiceOpen(false);
         setModalMode(null);
         setStudyGoalOpen(false);
+        setStudyCardEditor(undefined);
         setPortfolioEditor(undefined);
         setCareerEditor(undefined);
         setSocialEditor(undefined);
@@ -185,6 +187,51 @@ function App() {
     setAppState((current) => ({ ...current, studyGoal: goal }));
     setStudyGoalOpen(false);
     setToast('Study goal saved on this device');
+  }
+
+  function saveStudyCard(draft: { topic: string; question: string; answer: string; id?: string }) {
+    const now = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.studyCards.find((card) => card.id === draft.id);
+      if (existing) {
+        const nextTopic = draft.topic.trim() || existing.topic;
+        const changed = existing.question !== draft.question.trim() || existing.answer !== draft.answer.trim() || existing.topic !== nextTopic;
+        const updated: StudyCard = {
+          ...existing,
+          topic: nextTopic,
+          question: draft.question.trim(),
+          answer: draft.answer.trim(),
+          ...(changed ? { nextReviewAt: now, intervalDays: 0, reviewCount: 0, lastReviewedAt: '' } : {}),
+          updatedAt: now,
+        };
+        return { ...current, studyCards: current.studyCards.map((card) => card.id === existing.id ? updated : card) };
+      }
+      const card: StudyCard = {
+        id: createId('study-card'), topic: draft.topic.trim() || appState.studyGoal?.topic || 'General study',
+        question: draft.question.trim(), answer: draft.answer.trim(), nextReviewAt: now, intervalDays: 0, reviewCount: 0,
+        lastReviewedAt: '', createdAt: now, updatedAt: now,
+      };
+      return { ...current, studyCards: [card, ...current.studyCards] };
+    });
+    setStudyCardEditor(undefined);
+    setToast(draft.id ? 'Recall card updated locally' : 'Recall card added to your local deck');
+  }
+
+  function reviewStudyCard(id: string, remembered: boolean) {
+    const now = new Date();
+    setAppState((current) => ({
+      ...current,
+      studyCards: current.studyCards.map((card) => {
+        if (card.id !== id) return card;
+        const nextInterval = !remembered ? 0
+          : card.intervalDays === 0 ? 1
+            : card.intervalDays === 1 ? 3
+              : card.intervalDays === 3 ? 7
+                : card.intervalDays === 7 ? 14 : 30;
+        const nextReview = remembered ? new Date(now.getTime() + nextInterval * 24 * 60 * 60 * 1000) : new Date(now.getTime() + 10 * 60 * 1000);
+        return { ...card, intervalDays: nextInterval, reviewCount: card.reviewCount + 1, lastReviewedAt: now.toISOString(), nextReviewAt: nextReview.toISOString(), updatedAt: now.toISOString() };
+      }),
+    }));
   }
 
   function savePortfolioProject(draft: { id?: string; title: string; summary: string; content: string }) {
@@ -294,7 +341,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 5, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [] });
+      setAppState({ version: 6, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [], careerOpportunities: [], socialPosts: [], studyCards: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -372,6 +419,9 @@ function App() {
               onToast={setToast}
               onPlanStudy={() => setStudyGoalOpen(true)}
               onStartStudy={(title, minutes, goalId) => startFocusSession(title, minutes, goalId)}
+              onAddStudyCard={() => setStudyCardEditor(null)}
+              onEditStudyCard={setStudyCardEditor}
+              onReviewStudyCard={reviewStudyCard}
               onCreateProject={() => setPortfolioEditor(null)}
               onEditProject={setPortfolioEditor}
               onCreateOpportunity={() => setCareerEditor(null)}
@@ -406,6 +456,7 @@ function App() {
       )}
       {focusOpen && <FocusDialog title={focusDetails.title} minutes={focusDetails.minutes} onComplete={completeFocusSession} onClose={() => setFocusOpen(false)} />}
       {studyGoalOpen && <StudyGoalDialog current={appState.studyGoal} onSave={saveStudyGoal} onClose={() => setStudyGoalOpen(false)} />}
+      {studyCardEditor !== undefined && <StudyCardDialog current={studyCardEditor} defaultTopic={appState.studyGoal?.topic ?? ''} onSave={saveStudyCard} onClose={() => setStudyCardEditor(undefined)} />}
       {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
       {careerEditor !== undefined && <CareerOpportunityDialog current={careerEditor} onSave={saveCareerOpportunity} onClose={() => setCareerEditor(undefined)} />}
       {socialEditor !== undefined && <SocialPostDialog current={socialEditor} onSave={saveSocialPost} onClose={() => setSocialEditor(undefined)} />}
@@ -688,7 +739,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateSocialPost, onEditSocialPost }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onAddStudyCard, onEditStudyCard, onReviewStudyCard, onCreateProject, onEditProject, onCreateOpportunity, onEditOpportunity, onCreateSocialPost, onEditSocialPost }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -697,6 +748,9 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onToast: (message: string) => void;
   onPlanStudy: () => void;
   onStartStudy: (topic: string, minutes: number, goalId: string) => void;
+  onAddStudyCard: () => void;
+  onEditStudyCard: (card: StudyCard) => void;
+  onReviewStudyCard: (id: string, remembered: boolean) => void;
   onCreateProject: () => void;
   onEditProject: (project: PortfolioProject) => void;
   onCreateOpportunity: () => void;
@@ -714,7 +768,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
           <button className="button button-primary" onClick={page === 'library' ? onCapture : onAddTask}><Icon name="plus" size={16} /> {page === 'library' ? 'Add a note' : 'Add a task'}</button>
         </div>
       </div>
-      {page === 'study' && <StudyModule goal={state.studyGoal} sessions={state.studySessions} onPlan={onPlanStudy} onStart={onStartStudy} />}
+      {page === 'study' && <StudyModule goal={state.studyGoal} sessions={state.studySessions} cards={state.studyCards} onPlan={onPlanStudy} onStart={onStartStudy} onAddCard={onAddStudyCard} onEditCard={onEditStudyCard} onReviewCard={onReviewStudyCard} />}
       {page === 'career' && <CareerModule opportunities={state.careerOpportunities} onCreate={onCreateOpportunity} onEdit={onEditOpportunity} />}
       {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
       {page === 'studio' && <StudioModule posts={state.socialPosts} onCreate={onCreateSocialPost} onEdit={onEditSocialPost} />}
@@ -726,12 +780,17 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   );
 }
 
-function StudyModule({ goal, sessions, onPlan, onStart }: {
+function StudyModule({ goal, sessions, cards, onPlan, onStart, onAddCard, onEditCard, onReviewCard }: {
   goal: StudyGoal | null;
   sessions: StudySession[];
+  cards: StudyCard[];
   onPlan: () => void;
   onStart: (topic: string, minutes: number, goalId: string) => void;
+  onAddCard: () => void;
+  onEditCard: (card: StudyCard) => void;
+  onReviewCard: (id: string, remembered: boolean) => void;
 }) {
+  const [revealedCardId, setRevealedCardId] = useState<string | null>(null);
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const completedMinutes = sessions
     .filter((session) => goal && session.goalId === goal.id && new Date(session.completedAt).getTime() >= weekAgo)
@@ -740,6 +799,9 @@ function StudyModule({ goal, sessions, onPlan, onStart }: {
   const progress = targetMinutes ? Math.min(100, Math.round((completedMinutes / targetMinutes) * 100)) : 0;
   const recommendedMinutes = recommendedStudyBlock(goal);
   const checkedInToday = goal?.availabilityDate === localDateKey();
+  const dueCards = cards.filter((card) => new Date(card.nextReviewAt).getTime() <= Date.now()).sort((left, right) => left.nextReviewAt.localeCompare(right.nextReviewAt));
+  const dueCard = dueCards[0] ?? null;
+  const deckCards = [...cards].sort((left, right) => left.nextReviewAt.localeCompare(right.nextReviewAt));
 
   return (
     <div className="module-layout">
@@ -747,7 +809,10 @@ function StudyModule({ goal, sessions, onPlan, onStart }: {
         <div><span className="panel-eyebrow">YOUR STUDY PLAN</span><h2>{goal ? <>Make progress on<br />{goal.topic}.</> : <>Build understanding<br />one session at a time.</>}</h2><p>{goal ? `${Math.round(goal.weeklyTargetMinutes / 60 * 10) / 10} hours this week · ${checkedInToday ? `${goal.availableMinutesToday} minutes available today` : 'check in with today’s free time'}.` : 'Choose a topic, set a weekly target, and tell Silverstone how much time you have today.'}</p><div className="study-actions"><button className="button button-primary" onClick={onPlan}><Icon name="target" size={14} /> {goal ? (checkedInToday ? 'Adjust my goal' : 'Check in for today') : 'Set a study goal'}</button>{goal && recommendedMinutes > 0 && <button className="button button-secondary" onClick={() => onStart(goal.topic, recommendedMinutes, goal.id)}><Icon name="play" size={14} /> Start {recommendedMinutes} minutes</button>}</div></div>
         <div className="study-score"><span>LAST 7 DAYS</span><strong>{progress}<small>%</small></strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>{goal ? `${completedMinutes}m of ${targetMinutes}m` : 'Set a goal to track progress'}</small></div>
       </section>
-      <section className="panel module-panel"><PanelHeading eyebrow="READY TO REVIEW" title="Your learning queue" action={goal ? 'Edit study plan' : 'Set study goal'} onAction={onPlan} /><div className="learning-list">{goal ? <LearningRow icon="book" title={goal.topic} detail={`${completedMinutes} minutes logged in the last 7 days`} percent={progress ? `${progress}%` : 'Ready'} tone="blue" /> : <div className="study-empty"><span className="empty-icon"><Icon name="book" /></span><strong>Your study plan starts with a goal.</strong><span>Pick one topic and a weekly time target. You can change it whenever life changes.</span></div>}</div></section>
+      <section className="module-stats"><MiniStat value={String(cards.length)} label="Cards in your deck" icon="book" /><MiniStat value={String(dueCards.length)} label="Due for review" icon="clock" /><MiniStat value={String(cards.filter((card) => card.intervalDays > 0).length)} label="In review rhythm" icon="trend" /></section>
+      <section className="panel module-panel"><PanelHeading eyebrow="ACTIVE RECALL" title={dueCard ? 'Pause and retrieve.' : 'Your learning deck'} action="Add a card" onAction={onAddCard} />{dueCard ? <article className="study-recall-card"><div className="study-recall-meta"><span>{dueCard.topic}</span><small>{dueCards.length} due now</small></div><strong className="study-recall-question">{dueCard.question}</strong>{revealedCardId === dueCard.id ? <><div className="study-recall-answer" aria-live="polite">{dueCard.answer}</div><div className="study-review-actions"><button className="button button-secondary" onClick={() => { onReviewCard(dueCard.id, false); setRevealedCardId(null); }}>Review again<Icon name="reset" size={14} /></button><button className="button button-primary" onClick={() => { onReviewCard(dueCard.id, true); setRevealedCardId(null); }}><Icon name="check" size={14} /> Got it</button></div></> : <button className="button button-secondary" onClick={() => setRevealedCardId(dueCard.id)}>Reveal answer<Icon name="arrow" size={14} /></button>}</article> : <div className="study-empty"><span className="empty-icon"><Icon name="book" /></span><strong>{cards.length ? 'You are clear for now.' : 'Start a small recall deck.'}</strong><span>{cards.length ? 'Your next cards will appear here when they are due.' : 'Write a question and answer from material you are studying. New cards are ready for practice right away.'}</span><button className="button button-secondary" onClick={onAddCard}><Icon name="plus" size={14} /> Add a recall card</button></div>}</section>
+      {goal && <section className="panel module-panel"><PanelHeading eyebrow="WEEKLY FOCUS" title="Your learning plan" action="Edit study plan" onAction={onPlan} /><div className="learning-list"><LearningRow icon="book" title={goal.topic} detail={`${completedMinutes} minutes logged in the last 7 days`} percent={progress ? `${progress}%` : 'Ready'} tone="blue" /></div></section>}
+      {deckCards.length > 0 && <section className="panel module-panel"><PanelHeading eyebrow="CARD LIBRARY" title="Coming up next" action={`${cards.length} card${cards.length === 1 ? '' : 's'}`} /><div className="study-card-list">{deckCards.map((card) => { const isDue = new Date(card.nextReviewAt).getTime() <= Date.now(); return <button className="study-card-row" key={card.id} onClick={() => onEditCard(card)}><span className="study-card-row-icon"><Icon name="book" size={15} /></span><span><strong>{card.question}</strong><small>{card.topic} · {isDue ? 'Due now' : `Due ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(card.nextReviewAt))}`}</small></span><span className="learning-status status-blue">{card.reviewCount} review{card.reviewCount === 1 ? '' : 's'}</span></button>; })}</div></section>}
       <section className="module-cards"><MiniInfoCard icon="clock" title="Today’s availability" body={goal ? (checkedInToday ? `${goal.availableMinutesToday} minutes available today. Your plan suggests a ${recommendedMinutes || 'rest'} session.` : 'Your last availability check is from another day. Update it when you know what time you have today.') : 'Tell Silverstone how much time you have today, and it will suggest a small session.'} /><MiniInfoCard icon="sparkle" title="A helpful next step" body="Use a short recall session, then note what still feels unclear." /></section>
     </div>
   );
@@ -1028,7 +1093,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, recall cards, portfolio drafts, career opportunities, and social post drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -1042,8 +1107,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal and sessions, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, recall cards, portfolio drafts, career opportunities, social drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, recall cards, portfolio drafts, career opportunities, and social drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, recall cards, portfolio drafts, career opportunities, and social drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, study goals and sessions, recall cards with review intervals, portfolio drafts with saved versions, career opportunities, and social post drafts. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="CONNECTIONS" title="No services connected" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
     </>
@@ -1083,6 +1148,33 @@ function EntryDialog({ mode, onClose, onAddTask, onAddCapture }: { mode: Exclude
           <textarea id="entry-text" autoFocus rows={3} maxLength={500} value={text} onChange={(event) => setText(event.target.value)} placeholder={isTask ? 'e.g. Review the scholarship essay' : 'Write a note, idea, or reminder…'} />
           {isTask && <><label className="field-label" htmlFor="entry-category">Workspace</label><select id="entry-category" value={category} onChange={(event) => setCategory(event.target.value as TaskCategory)}><option>Personal</option><option>Study</option><option>Career</option><option>Portfolio</option></select></>}
           <div className="dialog-foot"><span><Icon name="shield" size={13} /> Saved on this device</span><button className="button button-primary" type="submit" disabled={!text.trim()}>{isTask ? 'Add task' : 'Save note'}<Icon name="arrow" size={14} /></button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function StudyCardDialog({ current, defaultTopic, onSave, onClose }: { current: StudyCard | null; defaultTopic: string; onSave: (draft: { id?: string; topic: string; question: string; answer: string }) => void; onClose: () => void }) {
+  const [topic, setTopic] = useState(current?.topic ?? defaultTopic);
+  const [question, setQuestion] = useState(current?.question ?? '');
+  const [answer, setAnswer] = useState(current?.answer ?? '');
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!question.trim() || !answer.trim()) return;
+    onSave({ id: current?.id, topic: topic.trim(), question: question.trim(), answer: answer.trim() });
+  }
+
+  return (
+    <div className="modal-scrim study-card-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card study-card-dialog" role="dialog" aria-modal="true" aria-labelledby="study-card-dialog-title">
+        <div className="dialog-top"><span className="dialog-icon"><Icon name="book" size={18} /></span><button className="icon-button" aria-label="Close recall card editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+        <span className="panel-eyebrow">LOCAL ACTIVE RECALL</span><h2 id="study-card-dialog-title">{current ? 'Improve this recall card.' : 'Make a question worth remembering.'}</h2><p>{current ? 'Changing a card resets its review interval so you can learn the updated version.' : 'New cards enter your review queue right away. They stay on this device.'}</p>
+        <form onSubmit={submit}>
+          <label className="field-label" htmlFor="study-card-topic">Topic</label><input id="study-card-topic" maxLength={120} value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. Rust ownership" />
+          <label className="field-label" htmlFor="study-card-question">Question</label><textarea id="study-card-question" required rows={3} maxLength={1000} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="What do you want to be able to recall without looking?" />
+          <label className="field-label" htmlFor="study-card-answer">Answer</label><textarea id="study-card-answer" required rows={5} maxLength={10000} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Write a concise explanation, steps, or key details." />
+          <div className="dialog-foot"><span><Icon name="shield" size={13} /> Stored locally · no AI generation</span><div className="study-card-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!question.trim() || !answer.trim()}>{current ? 'Save changes' : 'Add card'}<Icon name="arrow" size={14} /></button></div></div>
         </form>
       </section>
     </div>
