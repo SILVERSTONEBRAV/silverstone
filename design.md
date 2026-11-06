@@ -283,6 +283,8 @@ Check repository licenses before reusing source code. Use screenshots and live e
 ### Cloud-first and local storage
 
 - Canonical user records live online in Supabase Auth/PostgreSQL and private object storage, protected by per-user RLS and automatic authenticated sync. Migrate away from the current single JSONB workspace-copy prototype to relational, versioned records before integrating live accounts.
+- Migration `202611060002_cloud_first_records.sql` is the first additive schema foundation: it defines per-record non-draft workspace data, private profile/master-CV context, derived observation notes, email connection/header metadata, and a published-only portfolio table. The app still reads and writes the bootstrap JSONB copy; record sync and data migration are separate unfinished steps.
+- Email connection/message metadata and portfolio publication rows are server-managed, with browser clients limited to reading their permitted data. The Rust API must enforce OAuth scope and exact-content approval before sending mail or publishing; its database integration is not implemented yet.
 - Keep unsent email replies and unsubmitted application, portfolio, and social drafts in IndexedDB or Tauri SQLite on the originating device. Drafts stay out of cloud backup/sync unless the user explicitly exports, sends, or publishes them.
 - The PWA caches its app shell and a clearly marked, read-only subset of recently synced records. Offline capture may be queued locally with a pending label until the server confirms receipt; do not call a cloud mutation saved before acknowledgment.
 - Tauri client: SQLite stores device-only drafts, short-lived caches, and an explicit pending-sync outbox.
@@ -309,7 +311,7 @@ An offline post can remain a local draft or proposed schedule. It is not a confi
 
 ### Services
 
-- Hosted web workspace: Supabase Auth, relational Postgres, private Storage, and per-user RLS provide the online source of truth. The current app's JSONB workspace row and manual copy are a bootstrap prototype to migrate; only the Supabase URL and publishable key belong in the browser.
+- Hosted web workspace: Supabase Auth, relational Postgres, private Storage, and per-user RLS provide the online source of truth. Migration `202611060002_cloud_first_records.sql` prepares initial domain tables, but the app still uses the manual JSONB bootstrap copy until per-record sync and a data cutover ship. Only the Supabase URL and publishable key belong in the browser.
 - Rust API: Axum + Tokio, authentication, validation, business rules, policy gate, sync endpoints, and integration callbacks.
 - Database access: PostgreSQL + SQLx migrations and typed query practices.
 - Worker: scheduled and retryable jobs stored in PostgreSQL; lease jobs safely and record every attempt.

@@ -4,11 +4,19 @@
 
 **Draft boundary:** Earlier deployed versions uploaded the entire JSON workspace, including email reply, application, portfolio, and social drafts. The current branch excludes those four draft collections during cloud upload and preserves each device's own drafts on restore. Deploy this update before using cloud copy. If an older cloud row contains drafts, replace it from an updated device to overwrite those fields with empty collections; the relational cloud-first sync is still planned.
 
-## 1. Create the private workspace table
+## 1. Create the bootstrap workspace table
 
 Open the Supabase project’s **SQL Editor** and run [`supabase/migrations/202611060001_workspace_cloud_copy.sql`](supabase/migrations/202611060001_workspace_cloud_copy.sql). It creates one JSONB workspace row per authenticated user, enables RLS, and adds the revision-checked save function used by Silverstone.
 
 The function is `SECURITY INVOKER`; table grants and RLS continue to apply. Only the signed-in owner can read or write their own row. No anonymous access or client-side delete permission is granted.
+
+## 1a. Prepare the cloud-first record schema
+
+After migration `202611060001_workspace_cloud_copy.sql`, run [`supabase/migrations/202611060002_cloud_first_records.sql`](supabase/migrations/202611060002_cloud_first_records.sql) in the SQL Editor. It adds per-record storage for non-draft tasks, captures, study records, career records, and interview preparation; a private profile/master-CV record; private observation notes; email connection and message-header metadata; and a separate portfolio-publication table.
+
+Every private table has RLS policies scoped to the signed-in owner. The portfolio-publication table is the only table with anonymous read access, and it contains published content only; public clients can query its content columns but cannot read the owner ID or write rows. Email connection/message metadata and portfolio publications are writable only by the trusted `service_role`, so future OAuth and publication flows must go through the server-side API and its approval checks. Unsent email replies, application drafts, portfolio drafts, social drafts, email bodies, and OAuth tokens are not stored in these tables. Provider tokens belong in encrypted server-side storage.
+
+This migration prepares the schema but does **not** switch the current app to automatic per-record sync or copy existing JSONB workspace data into the new tables. The Settings screen still uses the manual workspace-copy table until the sync adapter is implemented. Existing rows in `silverstone_workspaces` are not modified by this migration.
 
 ## 2. Create the account and configure email links
 
