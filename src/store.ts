@@ -1,4 +1,4 @@
-import type { AgentTask, CaptureItem, LocalAppState, StudyGoal, StudySession } from './types';
+import type { AgentTask, CaptureItem, LocalAppState, PortfolioProject, PortfolioProjectVersion, StudyGoal, StudySession } from './types';
 
 const DATABASE_NAME = 'silverstone-local';
 const DATABASE_VERSION = 1;
@@ -59,29 +59,31 @@ let activeStorageBackend: 'indexeddb' | 'localstorage' = 'indexeddb';
 
 export function createInitialState(): LocalAppState {
   return {
-    version: 2,
+    version: 3,
     tasks: sampleTasks,
     captures: [],
     studyGoal: null,
     studySessions: [],
+    portfolioProjects: [],
   };
 }
 
 function normalizeLocalAppState(value: unknown): LocalAppState | null {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown };
+  const candidate = value as { version?: unknown; tasks?: unknown; captures?: unknown; studyGoal?: unknown; studySessions?: unknown; portfolioProjects?: unknown };
   if (!Array.isArray(candidate.tasks) || !candidate.tasks.every(isAgentTask)
     || !Array.isArray(candidate.captures) || !candidate.captures.every(isCaptureItem)) return null;
   if (candidate.version === 1) {
     return {
-      version: 2,
+      version: 3,
       tasks: candidate.tasks as AgentTask[],
       captures: candidate.captures as CaptureItem[],
       studyGoal: null,
       studySessions: [],
+      portfolioProjects: [],
     };
   }
-  if (candidate.version !== 2 || !Array.isArray(candidate.studySessions)) return null;
+  if ((candidate.version !== 2 && candidate.version !== 3) || !Array.isArray(candidate.studySessions)) return null;
   const goal = candidate.studyGoal;
   const validGoal = goal === null || (
     Boolean(goal) && typeof goal === 'object'
@@ -92,6 +94,8 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
     && typeof (goal as StudyGoal).updatedAt === 'string'
   );
   if (!validGoal || !candidate.studySessions.every(isStudySession)) return null;
+  const projects = candidate.version === 2 ? [] : candidate.portfolioProjects;
+  if (!Array.isArray(projects) || !projects.every(isPortfolioProject)) return null;
   const goalUpdatedAt = goal && typeof goal === 'object' ? new Date((goal as StudyGoal).updatedAt) : null;
   const normalizedGoal = goal && typeof goal === 'object'
     ? {
@@ -102,11 +106,12 @@ function normalizeLocalAppState(value: unknown): LocalAppState | null {
       }
     : null;
   return {
-    version: 2,
+    version: 3,
     tasks: candidate.tasks as AgentTask[],
     captures: candidate.captures as CaptureItem[],
     studyGoal: normalizedGoal,
     studySessions: candidate.studySessions,
+    portfolioProjects: projects,
   };
 }
 
@@ -135,6 +140,26 @@ function isStudySession(value: unknown): value is StudySession {
   return typeof session.id === 'string' && typeof session.goalId === 'string'
     && typeof session.topic === 'string' && Number.isFinite(session.plannedMinutes)
     && typeof session.completedAt === 'string';
+}
+
+function isPortfolioProjectVersion(value: unknown): value is PortfolioProjectVersion {
+  if (!value || typeof value !== 'object') return false;
+  const version = value as Partial<PortfolioProjectVersion>;
+  return typeof version.id === 'string' && typeof version.title === 'string' && version.title.length <= 120
+    && typeof version.summary === 'string' && version.summary.length <= 320
+    && typeof version.content === 'string' && version.content.length <= 25000
+    && typeof version.savedAt === 'string' && Number.isFinite(Date.parse(version.savedAt));
+}
+
+function isPortfolioProject(value: unknown): value is PortfolioProject {
+  if (!value || typeof value !== 'object') return false;
+  const project = value as Partial<PortfolioProject>;
+  return typeof project.id === 'string' && typeof project.title === 'string' && project.title.length <= 120
+    && typeof project.summary === 'string' && project.summary.length <= 320
+    && typeof project.content === 'string' && project.content.length <= 25000
+    && typeof project.updatedAt === 'string' && Number.isFinite(Date.parse(project.updatedAt)) && Array.isArray(project.versions)
+    && project.versions.length <= 30
+    && project.versions.every(isPortfolioProjectVersion);
 }
 
 export function createWorkspaceBackup(state: LocalAppState): string {

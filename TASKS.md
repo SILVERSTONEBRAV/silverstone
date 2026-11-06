@@ -11,7 +11,8 @@
 - React + TypeScript + Vite browser shell with responsive workspace navigation and dashboard pages.
 - Minimal Axum loopback health endpoint and TypeScript health response/client contract are scaffolded; Rust compilation remains pending because Cargo is unavailable.
 - IndexedDB-backed local tasks, notes, a weekly study goal, available-time preference, and completed focus-session log; migration from older Silverstone/Orbit localStorage keys; metadata, search, task completion, and theme preference. localStorage remains a fallback; browser data is not encrypted.
-- User-triggered JSON workspace backup and schema-validated restore for tasks, notes, and study data; the export is intentionally unencrypted and restore replaces the current local workspace after confirmation.
+- Local portfolio project drafts with a title, summary, case-study notes, plain-text Markdown preview, and up to 30 prior versions; users can restore an earlier version into the editor before saving. Drafts are local and are not published.
+- User-triggered JSON workspace backup and schema-validated restore for tasks, notes, study data, and portfolio drafts/version history; the export is intentionally unencrypted and restore replaces the current local workspace after confirmation.
 - PWA manifest, production service worker with install-time build-asset precaching, cache-first assets, and online/offline status indicator. The app shell and local records can work offline after a successful first install; cross-device sync and conflict recovery are not implemented.
 - Demo dashboard values are illustrative. No email, calendar, social, messaging, finance, camera, or AI integrations are connected. Voice uses browser speech APIs only; there is no connected AI voice service or saved audio recording.
 - The voice panel supports browser click-to-talk, typed messages, device text-to-speech, and simple local task/note/focus/day-summary intents. Browser coverage and processing location vary; native OS integration and secure storage are pending.
@@ -25,7 +26,7 @@ The interface is a working prototype, not yet a connected personal agent. The ne
 2. **Make local data dependable.** The browser now uses IndexedDB with localStorage migration/fallback and validated workspace backup/restore. Add a Tauri SQLite adapter, an encryption strategy, per-record deletion, sync outbox, and offline conflict recovery. Validate PWA install and offline behavior on real devices.
 3. **Compile and extend the Rust service.** Install/validate the Rust toolchain, compile the health service, then add authentication, durable records, sync, jobs, action approvals, and audit history.
 4. **Connect an AI provider safely.** Add a provider adapter for chat, structured intent, retrieval, citations, and multimodal inputs; keep secrets server-side and enforce action policy in Rust. Include a local-model path only if chosen hardware meets performance needs.
-5. **Finish core workflows.** Expand study plans with recurring availability, breaks, and learning tools; add evidence-backed CV, scholarship, and email drafts; portfolio editing and versioning; social drafts, approval, and scheduling.
+5. **Finish core workflows.** Expand study plans with recurring availability, breaks, and learning tools; add evidence-backed CV, scholarship, and email drafts; extend portfolio drafts with linked evidence, repository/deployment previews, and approved release; build social drafts, approval, and scheduling.
 6. **Package and validate voice/device support.** Check browser and OS speech behavior, microphone disclosures/permissions, no-save handling for live camera context, file/share capture, and native notification restrictions.
 7. **Add connectors with least privilege.** Implement each account separately after reviewing scopes, app approval, quotas, token revocation, and supported account types. Keep finance read-only and message sending/application submission/publishing approval-gated.
 8. **Harden and release.** Add workflow evaluations, accessibility review, server backup/restore, sync and action reconciliation, operational visibility, and a privacy/permission walkthrough before release.
@@ -108,10 +109,10 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 
 ## Phase 6 — Portfolio studio
 
-- [ ] **PORT-001 · P1** Define portfolio project/case-study schema, asset handling, links, skills, and evidence.
-- [ ] **PORT-002 · P1** Build portfolio project editor and live preview.
+- [~] **PORT-001 · P1** Define portfolio project/case-study schema, asset handling, links, skills, and evidence. Local title, summary, body, update time, and version records are defined; linked evidence and assets remain.
+- [~] **PORT-002 · P1** Build portfolio project editor and live preview. Local editor, text preview, and draft list exist; rendered Markdown and asset handling remain.
 - [ ] **PORT-003 · P1** Generate portfolio change proposals from selected notes/projects; show source evidence and content diff.
-- [ ] **PORT-004 · P1** Implement version history and rollback.
+- [~] **PORT-004 · P1** Implement version history and rollback. Up to 30 prior versions are saved and can be loaded into the editor; direct rollback and audit history remain.
 - [ ] **PORT-005 · P1** Connect portfolio repository/deployment target using least privilege.
 - [ ] **PORT-006 · P1** Require approval for release; record published URL, commit/deployment reference, and result.
 

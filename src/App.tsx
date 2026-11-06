@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Icon, type IconName } from './Icon';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
-import type { AgentTask, CaptureItem, LocalAppState, PageKey, StudyGoal, StudySession, TaskCategory } from './types';
+import type { AgentTask, CaptureItem, LocalAppState, PageKey, PortfolioProject, StudyGoal, StudySession, TaskCategory } from './types';
 import { createSpeechRecognizer, listSpeechVoices, speakText, stopSpeaking, type SpeechRecognizer } from './voice';
 
 type ModalMode = 'task' | 'capture' | null;
@@ -76,6 +76,7 @@ function App() {
   const [focusOpen, setFocusOpen] = useState(false);
   const [focusDetails, setFocusDetails] = useState({ title: 'Focused work', minutes: 25, studyGoalId: '' });
   const [studyGoalOpen, setStudyGoalOpen] = useState(false);
+  const [portfolioEditor, setPortfolioEditor] = useState<PortfolioProject | null | undefined>(undefined);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -144,6 +145,7 @@ function App() {
         setVoiceOpen(false);
         setModalMode(null);
         setStudyGoalOpen(false);
+        setPortfolioEditor(undefined);
         setFocusOpen(false);
         setMobileMenuOpen(false);
       }
@@ -183,6 +185,31 @@ function App() {
     setAppState((current) => ({ ...current, studyGoal: goal }));
     setStudyGoalOpen(false);
     setToast('Study goal saved on this device');
+  }
+
+  function savePortfolioProject(draft: { id?: string; title: string; summary: string; content: string }) {
+    const savedAt = new Date().toISOString();
+    setAppState((current) => {
+      const existing = current.portfolioProjects.find((project) => project.id === draft.id);
+      const project: PortfolioProject = existing
+        ? {
+            ...existing,
+            title: draft.title,
+            summary: draft.summary,
+            content: draft.content,
+            updatedAt: savedAt,
+            versions: existing.title === draft.title && existing.summary === draft.summary && existing.content === draft.content
+              ? existing.versions
+              : [{ id: createId('portfolio-version'), title: existing.title, summary: existing.summary, content: existing.content, savedAt: existing.updatedAt }, ...existing.versions].slice(0, 30),
+          }
+        : { id: createId('portfolio-project'), title: draft.title, summary: draft.summary, content: draft.content, updatedAt: savedAt, versions: [] };
+      const portfolioProjects = existing
+        ? current.portfolioProjects.map((item) => item.id === existing.id ? project : item)
+        : [project, ...current.portfolioProjects];
+      return { ...current, portfolioProjects };
+    });
+    setPortfolioEditor(undefined);
+    setToast('Portfolio draft saved locally');
   }
 
   async function restoreWorkspace(serializedBackup: string) {
@@ -235,7 +262,7 @@ function App() {
   async function resetWorkspace() {
     try {
       await clearLocalState();
-      setAppState({ version: 2, tasks: [], captures: [], studyGoal: null, studySessions: [] });
+      setAppState({ version: 3, tasks: [], captures: [], studyGoal: null, studySessions: [], portfolioProjects: [] });
       setToast('Local workspace data cleared');
     } catch {
       setToast('Could not clear saved data. Browser storage is unavailable.');
@@ -313,6 +340,8 @@ function App() {
               onToast={setToast}
               onPlanStudy={() => setStudyGoalOpen(true)}
               onStartStudy={(title, minutes, goalId) => startFocusSession(title, minutes, goalId)}
+              onCreateProject={() => setPortfolioEditor(null)}
+              onEditProject={setPortfolioEditor}
             />
           )}
         </main>
@@ -341,6 +370,7 @@ function App() {
       )}
       {focusOpen && <FocusDialog title={focusDetails.title} minutes={focusDetails.minutes} onComplete={completeFocusSession} onClose={() => setFocusOpen(false)} />}
       {studyGoalOpen && <StudyGoalDialog current={appState.studyGoal} onSave={saveStudyGoal} onClose={() => setStudyGoalOpen(false)} />}
+      {portfolioEditor !== undefined && <PortfolioProjectDialog current={portfolioEditor} onSave={savePortfolioProject} onClose={() => setPortfolioEditor(undefined)} />}
       {voiceOpen && (
         <VoiceAssistantDialog
           tasks={appState.tasks}
@@ -620,7 +650,7 @@ function TaskRow({ task, onToggle }: { task: AgentTask; onToggle: () => void }) 
   );
 }
 
-function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy }: {
+function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, onPlanStudy, onStartStudy, onCreateProject, onEditProject }: {
   page: Exclude<PageKey, 'today' | 'settings'>;
   state: LocalAppState;
   onNavigate: (page: PageKey) => void;
@@ -629,6 +659,8 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
   onToast: (message: string) => void;
   onPlanStudy: () => void;
   onStartStudy: (topic: string, minutes: number, goalId: string) => void;
+  onCreateProject: () => void;
+  onEditProject: (project: PortfolioProject) => void;
 }) {
   const copy = pageCopy[page];
   return (
@@ -642,7 +674,7 @@ function ModulePage({ page, state, onNavigate, onAddTask, onCapture, onToast, on
       </div>
       {page === 'study' && <StudyModule goal={state.studyGoal} sessions={state.studySessions} onPlan={onPlanStudy} onStart={onStartStudy} />}
       {page === 'career' && <CareerModule onToast={onToast} />}
-      {page === 'portfolio' && <PortfolioModule onToast={onToast} />}
+      {page === 'portfolio' && <PortfolioModule projects={state.portfolioProjects} onCreate={onCreateProject} onEdit={onEditProject} />}
       {page === 'studio' && <StudioModule onToast={onToast} />}
       {page === 'library' && <LibraryModule captures={state.captures} onCapture={onCapture} />}
       {page === 'observation' && <ObservationModule onToast={onToast} />}
@@ -694,18 +726,58 @@ function CareerModule({ onToast }: { onToast: (message: string) => void }) {
   );
 }
 
-function PortfolioModule({ onToast }: { onToast: (message: string) => void }) {
+function PortfolioModule({ projects, onCreate, onEdit }: { projects: PortfolioProject[]; onCreate: () => void; onEdit: (project: PortfolioProject) => void }) {
   return (
     <div className="module-layout">
-      <section className="portfolio-banner"><div><span className="panel-eyebrow">A PORTFOLIO THAT GROWS WITH YOU</span><h2>Turn the process<br />into the story.</h2><p>Bring evidence, decisions, and outcomes together before you publish.</p><button className="button button-light" onClick={() => onToast('Portfolio editing is planned; nothing has been published')}>Create a project</button></div><div className="portfolio-art"><span className="portfolio-art-card art-back" /><span className="portfolio-art-card art-mid" /><span className="portfolio-art-card art-front"><Icon name="layers" size={22} /><small>PROJECT / 01</small><b>Field notes<br />for better work.</b></span><span className="portfolio-orb" /></div></section>
-      <section className="module-cards portfolio-projects"><ProjectCard initials="01" name="A clearer onboarding flow" type="Product design · Case study" status="DRAFT" tone="blue" onClick={() => onToast('Project workspace is not connected yet')} /><ProjectCard initials="02" name="Community learning map" type="Research · Prototype" status="IN PROGRESS" tone="violet" onClick={() => onToast('Project workspace is not connected yet')} /></section>
+      <section className="portfolio-banner"><div><span className="panel-eyebrow">A PORTFOLIO THAT GROWS WITH YOU</span><h2>Turn the process<br />into the story.</h2><p>Draft a case study, keep earlier versions, and review it before you publish.</p><button className="button button-light" onClick={onCreate}><Icon name="plus" size={15} /> Create a project</button></div><div className="portfolio-art"><span className="portfolio-art-card art-back" /><span className="portfolio-art-card art-mid" /><span className="portfolio-art-card art-front"><Icon name="layers" size={22} /><small>PROJECT / 01</small><b>Field notes<br />for better work.</b></span><span className="portfolio-orb" /></div></section>
+      <section className="module-cards portfolio-projects">{projects.length ? projects.map((project, index) => <ProjectCard key={project.id} initials={String(index + 1).padStart(2, '0')} name={project.title} type={project.summary || `${project.versions.length} saved version${project.versions.length === 1 ? '' : 's'}`} status="LOCAL DRAFT" tone={['blue', 'violet', 'green', 'amber'][index % 4]} onClick={() => onEdit(project)} />) : <div className="portfolio-empty"><span className="empty-icon"><Icon name="layers" /></span><strong>No project drafts yet.</strong><span>Start with a project title and a few notes. Your drafts stay in this browser.</span><button className="button button-secondary" onClick={onCreate}><Icon name="plus" size={15} /> Create your first project</button></div>}</section>
       <section className="module-note"><Icon name="shield" size={16} /><span>Portfolio changes will be previewed and reviewed before anything is published.</span></section>
     </div>
   );
 }
 
 function ProjectCard({ initials, name, type, status, tone, onClick }: { initials: string; name: string; type: string; status: string; tone: string; onClick: () => void }) {
-  return <button className="project-card" onClick={onClick}><span className={`project-art project-art-${tone}`}><b>{initials}</b><i /><i /><i /></span><span className="project-card-body"><small>{status}</small><strong>{name}</strong><span>{type}</span><span className="project-open">Open project <Icon name="arrow" size={14} /></span></span></button>;
+  return <button className="project-card" onClick={onClick}><span className={`project-art project-art-${tone}`}><b>{initials}</b><i /><i /><i /></span><span className="project-card-body"><small>{status}</small><strong>{name}</strong><span>{type}</span><span className="project-open">Edit draft <Icon name="arrow" size={14} /></span></span></button>;
+}
+
+function PortfolioProjectDialog({ current, onSave, onClose }: { current: PortfolioProject | null; onSave: (draft: { id?: string; title: string; summary: string; content: string }) => void; onClose: () => void }) {
+  const [title, setTitle] = useState(current?.title ?? '');
+  const [summary, setSummary] = useState(current?.summary ?? '');
+  const [content, setContent] = useState(current?.content ?? '');
+  const [preview, setPreview] = useState(false);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanTitle = title.trim();
+    if (!cleanTitle) return;
+    onSave({ id: current?.id, title: cleanTitle, summary: summary.trim(), content: content.trim() });
+  }
+
+  function loadVersion(version: PortfolioProject['versions'][number]) {
+    setTitle(version.title);
+    setSummary(version.summary);
+    setContent(version.content);
+    setPreview(true);
+  }
+
+  return (
+    <div className="modal-scrim portfolio-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="dialog-card portfolio-dialog" role="dialog" aria-modal="true" aria-labelledby="portfolio-dialog-title">
+        <div className="dialog-top"><span className="dialog-icon"><Icon name="layers" size={18} /></span><button className="icon-button" aria-label="Close project editor" onClick={onClose}><Icon name="close" size={17} /></button></div>
+        <span className="panel-eyebrow">LOCAL PORTFOLIO DRAFT</span><h2 id="portfolio-dialog-title">{current ? 'Shape this project story.' : 'Start with the work.'}</h2><p>Keep a clear, evidence-backed draft. Silverstone does not publish it.</p>
+        <form onSubmit={submit}>
+          <label className="field-label" htmlFor="portfolio-title">Project title</label>
+          <input id="portfolio-title" required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. A clearer onboarding flow" />
+          <label className="field-label" htmlFor="portfolio-summary">Short summary</label>
+          <textarea id="portfolio-summary" rows={2} maxLength={320} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="What changed, who it helped, and why it mattered?" />
+          <div className="portfolio-content-heading">{preview ? <span className="field-label">Case study notes</span> : <label className="field-label" htmlFor="portfolio-content">Case study notes</label>}<button className="text-action" type="button" onClick={() => setPreview((value) => !value)}>{preview ? 'Edit notes' : 'Preview'}<Icon name={preview ? 'file' : 'external'} size={13} /></button></div>
+          {preview ? <article className="portfolio-preview"><span className="panel-eyebrow">DRAFT PREVIEW · MARKDOWN TEXT</span><h3>{title || 'Untitled project'}</h3>{summary && <p>{summary}</p>}<pre>{content || 'Your project notes will appear here.'}</pre></article> : <textarea id="portfolio-content" rows={10} maxLength={25000} value={content} onChange={(event) => setContent(event.target.value)} placeholder={'## Context\nWho was this for, and what needed to change?\n\n## Approach\nWhat did you explore, make, or learn?\n\n## Outcome\nWhat changed? Add evidence when you have it.'} />}
+          {current && <details className="portfolio-history"><summary>Version history · {current.versions.length} saved version{current.versions.length === 1 ? '' : 's'}</summary>{current.versions.length ? <ul>{current.versions.map((version) => <li key={version.id}><span><strong>{version.title}</strong><small>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(version.savedAt))}</small></span><button className="text-action" type="button" onClick={() => loadVersion(version)}>Restore to editor<Icon name="arrow" size={13} /></button></li>)}</ul> : <p>No earlier versions yet. Saving a change creates a version to return to.</p>}</details>}
+          <div className="dialog-foot"><span><Icon name="shield" size={13} /> Stored locally · never published here</span><div className="portfolio-editor-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={!title.trim()}>Save draft<Icon name="arrow" size={14} /></button></div></div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function StudioModule({ onToast }: { onToast: (message: string) => void }) {
@@ -804,7 +876,7 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       if (file.size > 10 * 1024 * 1024) throw new Error('This backup is larger than the 10 MB import limit.');
       const serializedBackup = await file.text();
       parseWorkspaceBackup(serializedBackup);
-      if (!window.confirm('Restore this backup and replace the tasks, notes, study goal, and study progress currently stored in this browser?')) return;
+      if (!window.confirm('Restore this backup and replace the tasks, notes, study progress, and portfolio drafts currently stored in this browser?')) return;
       await onImport(serializedBackup);
     } catch (error) {
       onToast(error instanceof Error ? error.message : 'Could not restore this backup.');
@@ -818,8 +890,8 @@ function SettingsPage({ state, theme, onThemeChange, onImport, onReset, onToast 
       <div className="page-heading module-heading"><div><div className="eyebrow-line"><span className="eyebrow-dot" /> YOUR CONTROLS</div><h1>Make this space yours.</h1><p>Preferences and privacy controls for this device.</p></div></div>
       <div className="settings-layout">
         <section className="panel settings-panel"><PanelHeading eyebrow="APPEARANCE" title="A comfortable workspace" /><div className="setting-row"><span className="setting-symbol"><Icon name={theme === 'light' ? 'sun' : 'moon'} size={18} /></span><span className="setting-copy"><strong>Color theme</strong><small>Choose the look that works for you.</small></span><div className="segmented-control"><button className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Icon name="sun" size={14} /> Light</button><button className={theme === 'dark' ? 'selected' : ''} onClick={() => onThemeChange('dark')}><Icon name="moon" size={14} /> Dark</button></div></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, and study progress from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, and study progress stored in this browser?')) onReset(); }}>Clear data</button></div></section>
-        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal, and completed study sessions. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="LOCAL DATA" title="This browser only" /><div className="local-data-card"><span className="local-data-icon"><Icon name="shield" size={18} /></span><span><strong>Your current preview data stays on this device.</strong><small>Tasks, captures, study goals, portfolio drafts, and theme preferences use browser storage, which is not an encrypted vault. Keep sensitive documents and account details out of this preview.</small></span></div><div className="setting-row setting-row-danger"><span className="setting-symbol danger-symbol"><Icon name="reset" size={18} /></span><span className="setting-copy"><strong>Clear local workspace</strong><small>Remove tasks, captures, study progress, and portfolio drafts from this browser.</small></span><button className="button button-danger" onClick={() => { if (window.confirm('Clear all tasks, captures, study progress, and portfolio drafts stored in this browser?')) onReset(); }}>Clear data</button></div></section>
+        <section className="panel settings-panel"><PanelHeading eyebrow="BACKUP & RESTORE" title="Keep a portable copy" /><div className="backup-summary"><span className="backup-summary-icon"><Icon name="download" size={18} /></span><div><strong>Export or restore this workspace</strong><p>The backup includes tasks, notes, your study goal and sessions, and portfolio drafts with saved versions. It is an unencrypted JSON file saved by your browser; Silverstone does not upload it.</p></div></div><div className="backup-actions"><button className="button button-secondary" onClick={exportBackup}><Icon name="download" size={15} /> Download backup</button><button className="button button-secondary" onClick={() => importInputRef.current?.click()}><Icon name="file" size={15} /> Restore backup</button><input ref={importInputRef} className="backup-file-input" type="file" accept=".json,application/json" aria-label="Choose a Silverstone backup file" onChange={importBackup} /></div></section>
         <section className="panel settings-panel"><PanelHeading eyebrow="CONNECTIONS" title="No services connected" /><div className="empty-connection"><span className="connection-lock"><Icon name="shield" size={19} /></span><p>Mail, calendar, social, brokerage, and device access are not active in this shell.</p><button className="text-action" onClick={() => onToast('Connection setup will be added after the permission service')}>Connection roadmap <Icon name="arrow" size={14} /></button></div></section>
       </div>
     </>

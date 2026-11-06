@@ -51,10 +51,28 @@ export interface StudySession {
   completedAt: string;
 }
 
+export interface PortfolioProjectVersion {
+  id: string;
+  title: string;
+  summary: string;
+  content: string;
+  savedAt: string;
+}
+
+export interface PortfolioProject {
+  id: string;
+  title: string;
+  summary: string;
+  content: string;
+  updatedAt: string;
+  versions: PortfolioProjectVersion[];
+}
+
 export interface LocalAppState {
-  version: 2;
+  version: 3;
   tasks: AgentTask[];
   captures: CaptureItem[];
   studyGoal: StudyGoal | null;
   studySessions: StudySession[];
+  portfolioProjects: PortfolioProject[];
 }
