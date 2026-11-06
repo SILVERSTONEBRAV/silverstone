@@ -2,14 +2,14 @@
 
 **Status legend:** `[ ]` not started · `[~]` in progress · `[!]` blocked · `[x]` done
 **Priority:** `P0` foundation/release blocker · `P1` core product · `P2` later enhancement
-**Planning state:** Documentation is drafted. The first browser shell builds, and a minimal Rust health API is scaffolded; durable backend workflows, sync, AI, and provider connections have not started.
+**Planning state:** The browser shell and user-triggered per-record Supabase sync build. The Rust API image builds successfully for Linux; native Windows compilation still needs the MSVC linker. Durable workflows, automatic sync, memory retrieval, and external account connections remain.
 
 **Dependency note:** Phase 8 groups shared intelligence work for visibility. Complete `SMART-001`–`SMART-003` and `SMART-008` as part of the core foundation before relying on personalized generation or long-running workflows in Phases 4–7. Complete `SMART-004` before high-impact career drafting, `SMART-009` before external publishing, and `SMART-011` before release gates. Complete `OBS-001` before committing to any broad connector promise, `CORE-009` before connecting observation sources, and `OBS-003` before surfacing cross-source recommendations.
 
 ## Implementation snapshot — 2026-11-06
 
 - React + TypeScript + Vite browser shell with responsive workspace navigation and dashboard pages.
-- Minimal Axum loopback health endpoint and TypeScript health response/client contract are scaffolded; Rust compilation remains pending because Cargo is unavailable.
+- Axum API now has live/readiness routes, CORS allowlisting, request limits, structured errors, a verified Supabase-user endpoint, and an authenticated OpenAI Responses chat route with a short per-user rate limit. Its Linux container image builds successfully and runs as a non-root user; native Windows build still needs the MSVC linker.
 - IndexedDB-backed local tasks, notes, a weekly study goal, available-time preference, and completed focus-session log; migration from older Silverstone/Orbit localStorage keys; metadata, search, task completion, and theme preference. localStorage remains a fallback; browser data is not encrypted.
 - Local active-recall deck with editable question/answer cards, due-now queue, reveal-before-rating flow, and review intervals that grow from one to 30 days; workspace backup includes card progress.
 - Local career tracker for jobs and scholarships with source URL, deadline, fit notes, editable application stage, scholarship eligibility/document checklists, per-opportunity next action and date, Today Radar surfacing, and pipeline counts; records are included in workspace backup/restore and are not submitted externally.
@@ -21,10 +21,11 @@
 - User-triggered JSON workspace backup and schema-validated restore for tasks, notes, study goals/sessions/cards, portfolio drafts/version history, career opportunities, career evidence and linked application drafts, email messages/reply drafts, and social drafts; the export is intentionally unencrypted and restore replaces the current local workspace after confirmation.
 - PWA manifest, production service worker with install-time build-asset precaching, cache-first assets, and online/offline status indicator. The app shell and local records can work offline after a successful first install; cross-device sync and conflict recovery are not implemented.
 - Dashboard cards and charts use saved local records. No calendar, mail, social, messaging, finance, camera, or AI-provider integrations are connected. Voice uses browser speech APIs; their processing location varies, and Silverstone does not save raw dictation audio.
-- The voice panel supports browser click-to-talk, typed messages, device text-to-speech, and simple local task/note/focus/day-summary intents. Browser coverage and processing location vary; native OS integration and secure storage are pending.
+- The voice panel supports browser click-to-talk, typed messages, device text-to-speech, simple local task/note/focus/day-summary intents, and a server-backed OpenAI text response path when signed in. Browser coverage and speech processing location vary; API host deployment and environment setup remain.
+- Voice chat now routes non-local questions to the Rust API when Supabase sign-in, the API URL, and the server-side OpenAI key are configured. It sends only the submitted text, uses `store: false`, and does not save the conversation in Silverstone; workspace retrieval, tools, and multi-turn context are not connected.
 - Today dashboard is wired to live local records: dynamic 7-day study time bar chart from completed focus sessions, career pipeline stage breakdown track (Exploring, Preparing, In review, Offer), next deadline runway, interactive Current Radar prioritizing due recall cards, study goals, upcoming deadlines, and content review times, and an Activity timeline fed by actual local capture history.
 - Interview preparation in Career: manual role, organization, format, interviewer, date/time, location/link, job excerpt, and focus topics; editable default and custom mock questions; answer autosave, browser dictation, and a transparent deterministic local rubric for STAR coverage, answer length, ownership, filler words, evidence, and entered role context. Includes a reusable STAR story bank, prep checklist, reverse-interview questions, elevator pitch, thank-you draft, debrief notes, recall-card handoff to Study, and Today Radar integration. The rubric is coaching feedback rather than an AI hiring prediction; raw audio is not saved by Silverstone.
-- `npm run build` completes successfully. No Rust toolchain was available in the workspace, so the Rust API scaffold has not been compiled.
+- `npm run build` completes successfully. `cargo fmt --all -- --check` and `git diff --check` pass. Native Windows `cargo check --workspace` needs Visual Studio's MSVC linker (`link.exe`); `docker build -f server/Dockerfile -t silverstone-api:local .` successfully builds the Linux API image.
 
 ## Remaining to reach a first usable release
 
@@ -32,14 +33,14 @@ The interface is a working prototype, not yet a connected personal agent. The ne
 
 1. **Lock the first release targets and data policy.** Choose target desktop/mobile OS, language/RTL needs, hosting or local-only mode, and an initial email/calendar/social provider. Confirm official API and account eligibility before promising an integration.
 2. **Make local data dependable.** The browser now uses IndexedDB with localStorage migration/fallback and validated workspace backup/restore. Add a Tauri SQLite adapter, an encryption strategy, per-record deletion, sync outbox, and offline conflict recovery. Validate PWA install and offline behavior on real devices.
-3. **Compile and extend the Rust service.** Install/validate the Rust toolchain, compile the health service, then add authentication, durable records, sync, jobs, action approvals, and audit history.
-4. **Connect an AI provider safely.** Add a provider adapter for chat, structured intent, retrieval, citations, and multimodal inputs; keep secrets server-side and enforce action policy in Rust. Include a local-model path only if chosen hardware meets performance needs.
+3. **Extend the Rust service.** The Linux container build is validated; install Visual Studio C++ Build Tools only if native Windows compilation is needed. Add durable records, sync, jobs, action approvals, and audit history.
+4. **Connect an AI provider safely.** The server-side OpenAI text response route is in place; add scoped retrieval, structured intents, citations, multimodal inputs, and durable usage accounting. Keep secrets server-side and enforce action policy in Rust. Include a local-model path only if chosen hardware meets performance needs.
 5. **Finish core workflows.** Expand study plans with recurring availability, breaks, AI tutoring, quizzes, and material-linked summaries; add evidence-backed CV, scholarship, and email drafts plus eligibility/document checklists; extend portfolio drafts with linked evidence, repository/deployment previews, and approved release; add social-specific variants, media, account connections, a timezone-aware calendar, approvals, and external scheduling.
 6. **Package and validate voice/device support.** Check browser and OS speech behavior, microphone disclosures/permissions, raw-camera-frame deletion and session-level observation-note consent, file/share capture, and native notification restrictions.
 7. **Add connectors with least privilege.** Implement each account separately after reviewing scopes, app approval, quotas, token revocation, and supported account types. Keep finance read-only and message sending/application submission/publishing approval-gated.
 8. **Harden and release.** Add workflow evaluations, accessibility review, server backup/restore, sync and action reconciliation, operational visibility, and a privacy/permission walkthrough before release.
 
-Current hard dependencies are a working Rust toolchain, the user's initial platform/provider choices, AI provider credentials or a local-model decision, and social API access where needed. The task phases below own the detailed implementation and acceptance criteria.
+Current hard dependencies are OpenAI/Supabase API variables on the Rust host, the user's initial platform/provider choices, and social API access where needed. Native Windows compilation also requires the MSVC linker; the Linux API container already builds. The task phases below own the detailed implementation and acceptance criteria.
 
 ## Phase 0 — Decisions and design validation
 
@@ -70,14 +71,14 @@ Current hard dependencies are a working Rust toolchain, the user's initial platf
 
 ## Phase 2 — Rust service foundation
 
-- [~] **CORE-001 · P0** Create Rust workspace, Axum/Tokio API, configuration, structured errors, and health endpoints. Workspace and loopback health route are scaffolded; structured errors and compilation remain.
+- [x] **CORE-001 · P0** Create Rust workspace, Axum/Tokio API, configuration, structured errors, health endpoints, and Linux container deployment. Image builds successfully; native Windows compilation needs MSVC Build Tools.
 - [~] **CORE-002 · P0** Design PostgreSQL schema and SQLx migration process for accounts, tasks, captures, workflows, approvals, and audit events. Supabase domain tables, explicit RLS, and atomic revision-checked per-record replacement RPCs exist; app still needs automatic sync/outbox, conflict resolution, workflow/approval/audit tables, and SQLx migration process.
-- [~] **CORE-003 · P0** Implement authentication, sessions, account deletion/export, and server-side secret handling. Supabase email-link sessions and experimental passkeys are scaffolded; account lifecycle, server-side secrets, and configured credentials remain.
+- [~] **CORE-003 · P0** Implement authentication, sessions, account deletion/export, and server-side secret handling. Supabase browser sign-in remains; the API validates bearer sessions against Supabase Auth without a service-role key. Account lifecycle, OAuth token vault, and configured host variables remain.
 - [ ] **CORE-004 · P0** Implement object storage upload/download with scoped, short-lived access.
 - [ ] **CORE-005 · P0** Implement device registration, sync cursor, version fields, idempotency keys, and sync outbox endpoints.
 - [ ] **CORE-006 · P0** Implement durable PostgreSQL-backed worker, job leases, retry/backoff, cancellation, and execution history.
 - [ ] **CORE-007 · P0** Implement action proposal, approval, expiry, payload hashing, policy revalidation, and audit trail.
-- [ ] **CORE-008 · P1** Add model-provider adapter, usage/latency accounting, structured outputs, and redacted traces.
+- [~] **CORE-008 · P1** Add model-provider adapter, usage/latency accounting, structured outputs, and redacted traces. Authenticated text-only OpenAI Responses adapter is in place with `store: false` and an in-memory request limit; workspace context, durable usage accounting, and structured outputs remain.
 - [ ] **CORE-009 · P0** Implement per-source capability grants with separate observe/suggest/act scopes, visible revocation, and a central policy check for every connector operation.
 - [ ] **CORE-010 · P0** Implement a minimal, expiring observation event ledger with provenance, sensitivity, retention, and redacted operational logs.
 

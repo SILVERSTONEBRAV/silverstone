@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { Icon, type IconName } from './Icon';
+import { askSilverstone } from './api';
 import { clearLocalState, createId, createInitialState, createWorkspaceBackup, loadLocalState, localDateKey, parseWorkspaceBackup, saveLocalState } from './store';
 import type { CloudWorkspaceSnapshot } from './cloud';
 import type { AgentTask, ApplicationDocument, ApplicationDocumentStatus, CareerDraft, CareerDraftKind, CareerEvidence, CareerEvidenceKind, CareerOpportunity, CaptureItem, EligibilityCheck, EligibilityStatus, EmailItem, EmailPriority, EmailStatus, EmailTriageCategory, InterviewAssessmentItem, InterviewFormat, InterviewPrep, InterviewPreparationChecklist, LocalAppState, OpportunityStage, PageKey, PortfolioProject, SocialChannel, SocialPostDraft, StarStory, StudyCard, StudyGoal, StudySession, TaskCategory } from './types';
@@ -3344,6 +3345,7 @@ function VoiceAssistantDialog({ tasks, onAddTask, onAddCapture, onStartFocus, on
   const [interim, setInterim] = useState('');
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [audioReplies, setAudioReplies] = useState(true);
   const [notice, setNotice] = useState('');
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(listSpeechVoices);
@@ -3376,9 +3378,9 @@ function VoiceAssistantDialog({ tasks, onAddTask, onAddCapture, onStartFocus, on
     if (!available) setNotice('Audio replies are not available in this browser. The text reply is still here.');
   }
 
-  function handleMessage(rawText: string) {
+  async function handleMessage(rawText: string) {
     const text = rawText.trim();
-    if (!text) return;
+    if (!text || thinking) return;
     setNotice('');
     setDraft('');
     setInterim('');
@@ -3424,12 +3426,20 @@ function VoiceAssistantDialog({ tasks, onAddTask, onAddCapture, onStartFocus, on
       return;
     }
 
-    const reply = "I heard you. This preview can read your local tasks, add a task or note, and start a focus session. AI answers across files and connected accounts are not wired up yet.";
-    setMessages((current) => [...current, { id: createId('turn'), role: 'silverstone', text: reply }]);
-    speakReply(reply);
+    setThinking(true);
+    try {
+      const response = await askSilverstone(text);
+      setMessages((current) => [...current, { id: createId('turn'), role: 'silverstone', text: response.answer }]);
+      speakReply(response.answer);
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Cloud AI could not answer this message.');
+    } finally {
+      setThinking(false);
+    }
   }
 
   function startListening() {
+    if (thinking) return;
     if (listening) {
       recognitionRef.current?.stop();
       return;
@@ -3474,7 +3484,7 @@ function VoiceAssistantDialog({ tasks, onAddTask, onAddCapture, onStartFocus, on
       setListening(false);
       recognitionRef.current = null;
       const transcript = finalTranscriptRef.current.trim();
-      if (transcript) handleMessage(transcript);
+      if (transcript) void handleMessage(transcript);
       setInterim('');
     };
     recognitionRef.current = recognition;
@@ -3490,7 +3500,7 @@ function VoiceAssistantDialog({ tasks, onAddTask, onAddCapture, onStartFocus, on
 
   function submitText(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    handleMessage(draft);
+    void handleMessage(draft);
   }
 
   const visibleVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith(language.slice(0, 2).toLowerCase()));
@@ -3505,7 +3515,7 @@ function VoiceAssistantDialog({ tasks, onAddTask, onAddCapture, onStartFocus, on
         </header>
 
         <div className="voice-status-row">
-          <span className={`voice-state ${listening ? 'voice-state-listening' : speaking ? 'voice-state-speaking' : ''}`}><i />{listening ? 'Listening to you' : speaking ? 'Speaking reply' : 'Ready when you are'}</span>
+          <span className={`voice-state ${listening ? 'voice-state-listening' : speaking ? 'voice-state-speaking' : ''}`}><i />{listening ? 'Listening to you' : speaking ? 'Speaking reply' : thinking ? 'Thinking with cloud AI' : 'Ready when you are'}</span>
           <button className={`voice-audio-toggle ${audioReplies ? 'is-on' : ''}`} onClick={() => { setAudioReplies((current) => !current); if (audioReplies) { stopSpeaking(); setSpeaking(false); } }} aria-pressed={audioReplies}>
             <Icon name={audioReplies ? 'volume' : 'volumeOff'} size={15} /> Audio replies {audioReplies ? 'on' : 'off'}
           </button>
@@ -3527,18 +3537,18 @@ function VoiceAssistantDialog({ tasks, onAddTask, onAddCapture, onStartFocus, on
         {notice && <div className="voice-notice" role="status">{notice}</div>}
 
         <form className="voice-composer" onSubmit={submitText}>
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={500} placeholder="Ask or tell Silverstone something…" aria-label="Type a message to Silverstone" />
-          <button type="button" className={`voice-mic-button ${listening ? 'is-listening' : ''}`} onClick={startListening} aria-label={listening ? 'Stop listening' : 'Start voice input'} title={listening ? 'Stop listening' : 'Start voice input'}>
+          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} maxLength={4000} disabled={thinking} placeholder="Ask or tell Silverstone something…" aria-label="Type a message to Silverstone" />
+          <button type="button" className={`voice-mic-button ${listening ? 'is-listening' : ''}`} onClick={startListening} disabled={thinking} aria-label={listening ? 'Stop listening' : 'Start voice input'} title={listening ? 'Stop listening' : 'Start voice input'}>
             {listening ? <span className="mic-stop-square" /> : <Icon name="mic" size={18} />}
           </button>
-          <button className="voice-send-button" type="submit" disabled={!draft.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>
+          <button className="voice-send-button" type="submit" disabled={!draft.trim() || thinking} aria-label="Send message"><Icon name={thinking ? 'sparkles' : 'send'} size={17} /></button>
         </form>
 
         <footer className="voice-footer">
-          <span><Icon name="shield" size={13} /> Silverstone saves no audio. Your browser speech service may process it; this conversation is temporary.</span>
+          <span><Icon name="shield" size={13} /> Silverstone saves no audio or chat. AI questions send only submitted text to OpenAI; provider data handling still applies. Your browser speech service may process voice input.</span>
           {visibleVoices.length > 0 && <label className="voice-choice"><span>Voice</span><select value={voiceName} onChange={(event) => setVoiceName(event.target.value)} aria-label="Choose spoken voice"><option value="">Device default</option>{visibleVoices.map((voice) => <option value={voice.name} key={`${voice.name}-${voice.lang}`}>{voice.name}</option>)}</select></label>}
         </footer>
-        <div className="voice-processing-note">Speech recognition depends on your browser and may need an internet connection. Transcripts stay in this open panel unless you ask Silverstone to save a task or note.</div>
+        <div className="voice-processing-note">Speech recognition depends on your browser and may need an internet connection. Local task and note commands stay on this device; other questions use cloud AI and require sign-in.</div>
       </section>
     </div>
   );
